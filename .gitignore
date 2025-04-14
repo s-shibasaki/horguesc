@@ -1,0 +1,43 @@
+# ビルド出力ディレクトリ
+Debug/
+Release/
+x64/
+x86/
+*.obj
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+*.idb
+*.tlog
+*.log
+*.lastbuildstate
+*.sdf
+*.ipch
+*.aps
+*.ncb
+*.opendb
+*.VC.db
+
+# Visual Studio関連
+.vscode/
+.vs/
+*.user
+*.suo
+*.vcxproj.user
+*.filters
+
+# CMake関連
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# その他
+*.tmp
+*.log
+*.bak
+*.swp
+*.DS_Store
+Thumbs.db

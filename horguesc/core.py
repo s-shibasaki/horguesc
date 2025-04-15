@@ -73,9 +73,6 @@ def load_dataset(exe_path, params=None):
 
         return records
 
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"C++ executable failed with error: {e.stderr}")
-
     finally:
         # 一時ファイルを削除
         if os.path.exists(output_path):

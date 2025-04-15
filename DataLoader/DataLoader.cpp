@@ -23,10 +23,27 @@ int main(int argc, char** argv)
 
 	JVLinkClass^ jvlink = gcnew JVLinkClass();
 	jvlink->JVInit("UNKNOWN");
-	std::cout << "JVLink initialized." << std::endl;
+	Console::WriteLine("JVLink initialized successfully.");
+
+	int readcount;
+	int downloadcount;
+	System::String^ lastfiletimestamp;
+	int returncode;
+
+	returncode = jvlink->JVOpen("RACE", "20190101000000", 4, readcount, downloadcount, lastfiletimestamp);
+	if (returncode != 0) {
+		Console::Error->WriteLine("JVOpen failed with error code: {0}", returncode);
+		return 1;
+	}
+	Console::WriteLine("JVOpen succeeded.");
+	Console::WriteLine("Read count: {0}", readcount);
+	Console::WriteLine("Download count: {0}", downloadcount);
+	Console::WriteLine("Last file timestamp: {0}", lastfiletimestamp);
+
+
 
 	std::vector<Record> records;
-	for (int i = 0; i < 100; ++i) {
+	for (int i = 0; i < 3; ++i) {
 		Record record;
 		record.id = i;
 		record.value = static_cast<float>(i) * 1.1f;

@@ -9,11 +9,8 @@ int main(int argc, char** argv)
 {
 
 	CLI::App app{ "Data Loader Application" };
-
 	std::string output_path;
-
 	app.add_option("--output", output_path, "Output file path")->required();
-
 	try {
 		app.parse(argc, argv);
 	}
@@ -21,16 +18,21 @@ int main(int argc, char** argv)
 		return app.exit(e);
 	}
 
-	JVLinkClass^ jvlink = gcnew JVLinkClass();
-	jvlink->JVInit("UNKNOWN");
-	Console::WriteLine("JVLink initialized successfully.");
-
-	int readcount;
-	int downloadcount;
-	System::String^ lastfiletimestamp;
 	int returncode;
 
-	returncode = jvlink->JVOpen("RACE", "20190101000000", 4, readcount, downloadcount, lastfiletimestamp);
+	JVLinkClass^ jvlink = gcnew JVLinkClass();
+	returncode = jvlink->JVInit("UNKNOWN");
+	if (returncode != 0) {
+		Console::Error->WriteLine("JVLink initialization failed with error code: {0}", returncode);
+		return 1;
+	}
+	Console::WriteLine("JVLink initialized successfully.");
+
+	int readcount = 0;
+	int downloadcount = 0;
+	System::String^ lastfiletimestamp = "";
+
+	returncode = jvlink->JVOpen("RACE", "20190101000000", 2, readcount, downloadcount, lastfiletimestamp);
 	if (returncode != 0) {
 		Console::Error->WriteLine("JVOpen failed with error code: {0}", returncode);
 		return 1;
@@ -39,6 +41,54 @@ int main(int argc, char** argv)
 	Console::WriteLine("Read count: {0}", readcount);
 	Console::WriteLine("Download count: {0}", downloadcount);
 	Console::WriteLine("Last file timestamp: {0}", lastfiletimestamp);
+
+	double progress;
+
+	while (true) {
+		returncode = jvlink->JVStatus();
+		if (returncode == downloadcount) {
+			Console::WriteLine("\rAll data downloaded.");
+			break;
+		}
+		else if (returncode >= 0) {
+			progress = static_cast<double>(returncode) / downloadcount * 100.0;
+			Console::Write("\r{0:F2}%", progress);
+		}
+		else
+		{
+			Console::Error->WriteLine("\rJVStatus failed with error code: {0}", returncode);
+			return 1;
+		}
+	}
+
+	Object^ buff = gcnew array<Byte>(110000);
+	String^ filename = "";
+
+	array<Byte>^ byteArray;
+	Text::Encoding^ shiftJis = Text::Encoding::GetEncoding("shift_jis");
+	String^ content;
+
+	while (true) {
+		returncode = jvlink->JVGets(buff, 110000, filename);
+		if (returncode == 0) {
+			Console::WriteLine("All data read.");
+			break;
+		}
+		else if (returncode >= 0) {
+			// 取得したデータを処理する。
+			byteArray = safe_cast<array<Byte>^>(buff);
+			content = shiftJis->GetString(byteArray, 0, returncode);
+			Console::Write(content);
+		}
+		else if (returncode == -1) {
+			// ファイルの終端に達した場合。何もしない。
+			continue;
+		}
+		else {
+			Console::Error->WriteLine("JVRead failed with error code: {0}", returncode);
+			return 1;
+		}
+	}
 
 
 

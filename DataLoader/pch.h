@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <atlbase.h>
+#include <comdef.h>
 
 #include "CLI11.hpp"
 

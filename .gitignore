@@ -1,4 +1,4 @@
-# ƒrƒ‹ƒho—ÍƒfƒBƒŒƒNƒgƒŠ
+# ãƒ“ãƒ«ãƒ‰å‡ºåŠ›ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒª
 Debug/
 Release/
 x64/
@@ -20,7 +20,7 @@ x86/
 *.opendb
 *.VC.db
 
-# Visual StudioŠÖ˜A
+# Visual Studioé–¢é€£
 .vscode/
 .vs/
 *.user
@@ -28,16 +28,47 @@ x86/
 *.vcxproj.user
 *.filters
 
-# CMakeŠÖ˜A
+# CMakeé–¢é€£
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
 Makefile
 
-# ‚»‚Ì‘¼
+# ãã®ä»–
 *.tmp
 *.log
 *.bak
 *.swp
 *.DS_Store
 Thumbs.db
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo

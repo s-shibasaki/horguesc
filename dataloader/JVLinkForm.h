@@ -72,10 +72,15 @@ namespace dataloader {
 			this->Controls->Add(this->axJVLink1);
 			this->Name = L"JVLinkForm";
 			this->Text = L"JVLinkForm";
+			this->Load += gcnew System::EventHandler(this, &JVLinkForm::JVLinkForm_Load);
 			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->axJVLink1))->EndInit();
 			this->ResumeLayout(false);
 
 		}
 #pragma endregion
+	private: System::Void JVLinkForm_Load(System::Object^ sender, System::EventArgs^ e) {
+		Console::WriteLine("JVLinkForm_Load");
+		Application::Exit();
+	}
 	};
 }

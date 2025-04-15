@@ -1,8 +1,14 @@
 #include "pch.h"
+#include "JVLinkForm.h"
 
 using namespace System;
+using namespace System::Windows::Forms;
 
-int main(array<System::String ^> ^args)
+[STAThreadAttribute]
+int main(array<String ^> ^args)
 {
+    Application::EnableVisualStyles();
+    Application::SetCompatibleTextRenderingDefault(false);
+    Application::Run(gcnew dataloader::JVLinkForm());
     return 0;
 }

@@ -171,11 +171,10 @@ namespace dataloader {
 				int retVal;
 
 				List<DataFetchParams^>^ paramsList = gcnew List<DataFetchParams^>();
-				paramsList->Add(gcnew DataFetchParams("TOKUDIFNHOSNHOYUCOMM", fromYear.ToString() + "0101000000", 4));
 				for (int year = fromYear; year < currentYear; year++) {
 					paramsList->Add(gcnew DataFetchParams("RACEBLDNSNPNSLOPWOODYSCHMING", year.ToString() + "0101000000-" + (year + 1).ToString() + "0101000000", 4));
 				}
-				paramsList->Add(gcnew DataFetchParams("RACEBLDNSNPNSLOPWOODYSCHMING", currentYear.ToString() + "0101000000", 4));
+				paramsList->Add(gcnew DataFetchParams("RACEBLDNSNPNSLOPWOODYSCHMINGTOKUDIFNHOSNHOYUCOMM", currentYear.ToString() + "0101000000", 4));
 
 				// JVInit
 				retVal = jvlink->JVInit(sid);

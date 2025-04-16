@@ -2,230 +2,211 @@
 
 namespace dataloader {
 
-	using namespace System;
-	using namespace System::ComponentModel;
-	using namespace System::Collections;
-	using namespace System::Windows::Forms;
-	using namespace System::Data;
-	using namespace System::Drawing;
+    using namespace System;
+    using namespace System::ComponentModel;
+    using namespace System::Collections;
+    using namespace System::Windows::Forms;
+    using namespace System::Data;
+    using namespace System::Drawing;
+    using Collections::Generic::List;
 
-	public ref class DataLoaderForm : public System::Windows::Forms::Form {
-	public:
-		DataLoaderForm(void) {
-			InitializeComponent();
-		}
+    public ref class DataLoaderForm : public System::Windows::Forms::Form {
+    public:
+        DataLoaderForm(array<String^>^ args) {
+            InitializeComponent();
+            this->args = args;
+        }
 
-		DataLoaderForm(array<String^>^ args) {
-			InitializeComponent();
-			args = args;
-		}
+    protected:
+        ~DataLoaderForm() {
+            if (components)
+            {
+                delete components;
+            }
+        }
 
-	protected:
-		~DataLoaderForm() {
-			if (components)
-			{
-				delete components;
-			}
-		}
+    private:
+        AxJVDTLabLib::AxJVLink^ jvlink;
+        System::ComponentModel::Container^ components;
+        array<String^>^ args;
 
-	private:
-		array<String^>^ args;
-		AxJVDTLabLib::AxJVLink^ jvlink;
-		System::ComponentModel::Container^ components;
-		System::Windows::Forms::Button^ button;
-		System::Windows::Forms::TextBox^ textBox;
+        void InitializeComponent(void) {
+            System::ComponentModel::ComponentResourceManager^ resources = (gcnew System::ComponentModel::ComponentResourceManager(DataLoaderForm::typeid));
+            this->jvlink = (gcnew AxJVDTLabLib::AxJVLink());
+            (cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->jvlink))->BeginInit();
+            this->SuspendLayout();
 
-		void InitializeComponent(void) {
+            this->jvlink->Enabled = true;
+            this->jvlink->Location = System::Drawing::Point(13, 13);
+            this->jvlink->Name = L"jvlink";
+            this->jvlink->OcxState = (cli::safe_cast<System::Windows::Forms::AxHost::State^>(resources->GetObject(L"jvlink.OcxState")));
+            this->jvlink->Size = System::Drawing::Size(192, 192);
+            this->jvlink->TabIndex = 0;
 
-			System::ComponentModel::ComponentResourceManager^ resources = (gcnew System::ComponentModel::ComponentResourceManager(DataLoaderForm::typeid));
-			this->jvlink = (gcnew AxJVDTLabLib::AxJVLink());
-			this->button = (gcnew System::Windows::Forms::Button());
-			this->textBox = (gcnew System::Windows::Forms::TextBox());
-			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->jvlink))->BeginInit();
-			this->SuspendLayout();
+            this->AutoScaleDimensions = System::Drawing::SizeF(6, 13);
+            this->AutoScaleMode = System::Windows::Forms::AutoScaleMode::Font;
+            this->ClientSize = System::Drawing::Size(218, 217);
+            this->Controls->Add(this->jvlink);
+            this->Name = L"DataLoaderForm";
+            this->Text = L"Data Loader";
+            this->Shown += gcnew System::EventHandler(this, &DataLoaderForm::form_Shown);
+            (cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->jvlink))->EndInit();
+            this->ResumeLayout(false);
+        }
 
-			this->jvlink->Enabled = true;
-			this->jvlink->Location = System::Drawing::Point(13, 13);
-			this->jvlink->Name = L"jvlink";
-			this->jvlink->OcxState = (cli::safe_cast<System::Windows::Forms::AxHost::State^>(resources->GetObject(L"jvlink.OcxState")));
-			this->jvlink->Size = System::Drawing::Size(192, 192);
-			this->jvlink->TabIndex = 0;
+        ref struct DataFetchParams {
+            String^ dataSpec;
+            String^ fromTime;
+            int option;
+            DataFetchParams(String^ dataSpec, String^ fromTime, int option) {
+                this->dataSpec = dataSpec;
+                this->fromTime = fromTime;
+                this->option = option;
+            }
+        };
 
-			this->button->Anchor = static_cast<System::Windows::Forms::AnchorStyles>((System::Windows::Forms::AnchorStyles::Bottom | System::Windows::Forms::AnchorStyles::Right));
-			this->button->Location = System::Drawing::Point(322, 211);
-			this->button->Name = L"button";
-			this->button->Size = System::Drawing::Size(75, 23);
-			this->button->TabIndex = 1;
-			this->button->Text = L"Exit";
-			this->button->UseVisualStyleBackColor = true;
-			this->button->Click += gcnew System::EventHandler(this, &DataLoaderForm::button_Click);
+        bool FetchAndAppendData(DataFetchParams^ params, IO::StreamWriter^ writer) {
+            int retVal;
+            int readCount;
+            int downloadCount;
+            String^ lastFileTimeStamp;
+            String^ fileName;
+            String^ buff;
+            int size = 110000;
 
-			this->textBox->Anchor = static_cast<System::Windows::Forms::AnchorStyles>((((System::Windows::Forms::AnchorStyles::Top | System::Windows::Forms::AnchorStyles::Bottom)
-				| System::Windows::Forms::AnchorStyles::Left)
-				| System::Windows::Forms::AnchorStyles::Right));
-			this->textBox->Location = System::Drawing::Point(13, 13);
-			this->textBox->Multiline = true;
-			this->textBox->Name = L"textBox";
-			this->textBox->ScrollBars = System::Windows::Forms::ScrollBars::Both;
-			this->textBox->Size = System::Drawing::Size(384, 192);
-			this->textBox->TabIndex = 2;
+            int progress;
+            int lastRetVal;
 
-			this->AutoScaleDimensions = System::Drawing::SizeF(6, 13);
-			this->AutoScaleMode = System::Windows::Forms::AutoScaleMode::Font;
-			this->ClientSize = System::Drawing::Size(410, 246);
-			this->Controls->Add(this->jvlink);
-			this->Controls->Add(this->textBox);
-			this->Controls->Add(this->button);
-			this->Name = L"form";
-			this->Text = L"Data Loader";
-			this->Load += gcnew System::EventHandler(this, &DataLoaderForm::form_Load);
-			this->Shown += gcnew System::EventHandler(this, &DataLoaderForm::form_Shown);
-			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->jvlink))->EndInit();
-			this->ResumeLayout(false);
-		}
+            // show dataSpec, fromTime, option
+            Console::WriteLine("--------------------------------------------------");
+            Console::WriteLine("Data Spec: " + params->dataSpec);
+            Console::WriteLine("From Time: " + params->fromTime);
+            Console::WriteLine("Option: " + params->option);
 
-		System::Void form_Load(System::Object^ sender, System::EventArgs^ e) {
-		}
+            // JVOpen
+            retVal = jvlink->JVOpen(params->dataSpec, params->fromTime, params->option, readCount, downloadCount, lastFileTimeStamp);
+            if (retVal == 0) {
+                Console::WriteLine("JVLink opened successfully.");
+            }
+            else {
+                Console::WriteLine("JVLink open failed with error code: " + retVal.ToString());
+                return false;
+            }
 
-		System::Void form_Shown(System::Object^ sender, System::EventArgs^ e) {
-			// TODO: コマンドライン引数を処理する
+            // show readCount, downloadCount, lastFileTimeStamp
+            Console::WriteLine("Read Count: " + readCount.ToString());
+            Console::WriteLine("Download Count: " + downloadCount.ToString());
+            Console::WriteLine("Last File Time Stamp: " + lastFileTimeStamp);
 
-			// params
-			String^ sid = "UNKNOWN";
-			String^ dataSpec = "RACE";
-			String^ fromTime = "20190101000000-20230101000000";
-			int option = 4;
-			int size = 110000;
+            // JVStatus
+            retVal = 0;
+            lastRetVal = -1;
+            while (true) {
+                if (retVal >= 0) {
+                    if (lastRetVal != retVal) {
+                        lastRetVal = retVal;
+                        Console::Write("\rDownload progress: " + retVal.ToString() + " / " + downloadCount.ToString());
 
-			// jvlink variables
-			int retVal;
-			int readCount;
-			int downloadCount;
-			String^ lastFileTimeStamp;
-			String^ fileName;
-			String^ buff;
+                        if (retVal == downloadCount) {
+                            // all files downloaded
+                            Console::WriteLine("\r\nAll files downloaded.");
+                            break;
+                        }
+                    }
+                }
+                else {
+                    // download failed
+                    Console::WriteLine("\r\nDownload failed with error code: " + retVal.ToString());
+                    return false;
+                }
+                Application::DoEvents();
+                retVal = jvlink->JVStatus();
+            }
 
-			// other variables
-			String^ statusMessage;
-			int previousStatusLength;
-			int textLength;
-			int progress;
-			int lastRetVal;
+            // JVRead
+            progress = -1;
+            retVal = -1;
+            while (true) {
+                if (retVal > 0) {
+                    writer->Write(buff);
+                }
+                else if (retVal == -1) {
+                    ++progress;
+                    Console::Write("\rReading progress: " + progress.ToString() + " / " + readCount.ToString());
+                }
+                else if (retVal == 0) {
+                    // all files read
+                    Console::WriteLine("\r\nAll files read.");
+                    break;
+                }
+                else {
+                    // read failed
+                    Console::WriteLine("\r\nRead failed with error code: " + retVal.ToString());
+                    return false;
+                }
+                Application::DoEvents();
+                retVal = jvlink->JVRead(buff, size, fileName);
+            }
 
-			// JVInit
-			retVal = jvlink->JVInit(sid);
-			if (retVal == 0) {
-				textBox->AppendText("JVLink initialized successfully.\r\n");
-			}
-			else {
-				textBox->AppendText("JVLink initialization failed with error code: " + retVal.ToString() + "\r\n");
-				return;
-			}
+            return true;
+        }
 
-			// show dataSpec, fromTime, option
-			textBox->AppendText("Data Spec: " + dataSpec + "\r\n");
-			textBox->AppendText("From Time: " + fromTime + "\r\n");
-			textBox->AppendText("Option: " + option.ToString() + "\r\n");
+        System::Void form_Shown(System::Object^ sender, System::EventArgs^ e) {
 
-			// JVOpen
-			retVal = jvlink->JVOpen(dataSpec, fromTime, option, readCount, downloadCount, lastFileTimeStamp);
-			if (retVal == 0) {
-				textBox->AppendText("JVLink opened successfully.\r\n");
-			}
-			else {
-				textBox->AppendText("JVLink open failed with error code: " + retVal.ToString() + "\r\n");
-				return;
-			}
+            // params
+            String^ sid = "UNKNOWN";
+            int fromYear = 2020;
+            int currentYear = 2025;
+            int retVal;
 
-			// show readCount, downloadCount, lastFileTimeStamp
-			textBox->AppendText("Read Count: " + readCount.ToString() + "\r\n");
-			textBox->AppendText("Download Count: " + downloadCount.ToString() + "\r\n");
-			textBox->AppendText("Last File Time Stamp: " + lastFileTimeStamp + "\r\n");
+            List<DataFetchParams^>^ paramsList = gcnew List<DataFetchParams^>();
+            paramsList->Add(gcnew DataFetchParams("TOKUDIFNHOSNHOYUCOMM", fromYear.ToString() + "0101000000", 4));
+            for (int year = fromYear; year < currentYear; year++) {
+                paramsList->Add(gcnew DataFetchParams("RACEBLDNSNPNSLOPWOODYSCHMING", year.ToString() + "0101000000-" + (year + 1).ToString() + "0101000000", 4));
+            }
+            paramsList->Add(gcnew DataFetchParams("RACEBLDNSNPNSLOPWOODYSCHMING", currentYear.ToString() + "0101000000", 4));
 
-			// JVStatus
-			retVal = 0;
-			lastRetVal = -1;
-			previousStatusLength = 0;
-			while (true) {
-				if (retVal >= 0) {
-					if (lastRetVal != retVal) {
-						lastRetVal = retVal;
-						// create message
-						statusMessage = "Downloading file: " + retVal.ToString() + " of " + downloadCount.ToString() + "\r\n";
+            // JVInit
+            retVal = jvlink->JVInit(sid);
+            if (retVal == 0) {
+                Console::WriteLine("JVLink initialized successfully.");
+            }
+            else {
+                Console::WriteLine("JVLink initialization failed with error code: " + retVal.ToString());
+                return;
+            }
 
-						// remove previous status line
-						textLength = textBox->Text->Length;
-						textBox->Text = textBox->Text->Remove(textLength - previousStatusLength, previousStatusLength);
+            // Check if output directory exists, create if not
+            String^ outputDir = "data";
+            if (!IO::Directory::Exists(outputDir)) {
+                IO::Directory::CreateDirectory(outputDir);
+                Console::WriteLine("Created output directory: " + outputDir);
+            }
 
-						// append new status
-						textBox->AppendText(statusMessage);
-						previousStatusLength = statusMessage->Length;
+            IO::StreamWriter^ writer = gcnew IO::StreamWriter("data/jvd.dat", false, System::Text::Encoding::UTF8);
+            Console::WriteLine("Created file data/setup.bat");
 
-						if (retVal == downloadCount) {
-							// all files downloaded
-							textBox->AppendText("All files downloaded.\r\n");
-							break;
-						}
-					}
-				}
-				else {
-					// download failed
-					textBox->AppendText("Download failed with error code: " + retVal.ToString() + "\r\n");
-					return;
-				}
-				Application::DoEvents();
-				retVal = jvlink->JVStatus();
-			}
+            for (int i = 0; i < paramsList->Count; i++) {
+                Console::WriteLine("\nProcessing data set " + (i + 1).ToString() + " / " + paramsList->Count.ToString());
 
-			// JVRead
-			progress = -1;
-			retVal = -1;
-			previousStatusLength = 0;
-			while (true) {
-				if (retVal > 0) {
-					// write to file
-				}
-				else if (retVal == -1) {
-					++progress;
-					// show progress
-					statusMessage = "Reading file: " + progress.ToString() + " of " + readCount.ToString() + "\r\n";
+                bool success = FetchAndAppendData(paramsList[i], writer);
+                if (!success) {
+                    Console::WriteLine("Failed to process data set " + (i + 1).ToString() + ". Aborting.");
+                    break;
+                }
 
-					// remove previous status line
-					textLength = textBox->Text->Length;
-					textBox->Text = textBox->Text->Remove(textLength - previousStatusLength, previousStatusLength);
+                jvlink->JVClose();
+                Console::WriteLine("JVLink closed.");
+            }
 
-					// append new status
-					textBox->AppendText(statusMessage);
-					previousStatusLength = statusMessage->Length;
-				}
-				else if (retVal == 0) {
-					// all files read
-					textBox->AppendText("All files read.\r\n");
-					break;
-				}
-				else {
-					// read failed
-					textBox->AppendText("Read failed with error code: " + retVal.ToString() + "\r\n");
-					return;
-				}
-				Application::DoEvents();
-				retVal = jvlink->JVRead(buff, size, fileName);
-			}
+            writer->Close();
 
+            Console::WriteLine("\nAll data processing completed.");
+            return;
+        }
 
-
-
-
-
-
-			// done
-			textBox->AppendText("Done.\r\n");
-
-			Application::Exit();
-		}
-
-		System::Void button_Click(System::Object^ sender, System::EventArgs^ e) {
-			Application::Exit();
-		}
-	};
+        System::Void button_Click(System::Object^ sender, System::EventArgs^ e) {
+            Application::Exit();
+        }
+    };
 }

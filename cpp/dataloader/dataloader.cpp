@@ -4,11 +4,12 @@
 using namespace System;
 using namespace System::Windows::Forms;
 
+
 [STAThreadAttribute]
-int main(array<String ^> ^args)
+int main(array<String^>^ args)
 {
-    Application::EnableVisualStyles();
-    Application::SetCompatibleTextRenderingDefault(false);
-    Application::Run(gcnew dataloader::DataLoaderForm(args));
-    return 0;
+	Application::EnableVisualStyles();
+	Application::SetCompatibleTextRenderingDefault(false);
+	Application::Run(gcnew dataloader::DataLoaderForm(args));
+	return 0;
 }

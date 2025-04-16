@@ -1,6 +1,8 @@
-﻿#include <iostream>
+#include "pch.h"
 
-int main()
+using namespace System;
+
+int main(array<System::String ^> ^args)
 {
-    std::cout << "Hello World!\n";
+    return 0;
 }

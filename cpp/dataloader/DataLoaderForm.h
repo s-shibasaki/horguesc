@@ -193,14 +193,14 @@ namespace dataloader {
 					Console::WriteLine("Created output directory: " + outputDir);
 				}
 
-				writer = gcnew IO::StreamWriter("data/jvd.dat", false);
+				System::Text::Encoding^ encoding = System::Text::Encoding::GetEncoding("Shift_JIS");
+				writer = gcnew IO::StreamWriter("data/jvd.dat", false, encoding);
 				Console::WriteLine("Created file data/jvd.dat");
 
 				for (int i = 0; i < paramsList->Count; i++) {
 					Console::WriteLine("\nProcessing data set " + (i + 1).ToString() + " / " + paramsList->Count.ToString());
 
-					bool success = FetchAndAppendData(paramsList[i], writer);
-					if (!success) {
+					if (!FetchAndAppendData(paramsList[i], writer)) {
 						Console::WriteLine("Failed to process data set " + (i + 1).ToString() + ". Aborting.");
 						return;
 					}

@@ -6,6 +6,7 @@
 #include <chrono>
 #include <memory>
 #include <iomanip>
+#include <unordered_map>
 
 namespace JVData
 {
@@ -22,16 +23,8 @@ namespace JVData
         }
 
         // Get the value as a string
-        std::string getValue() const
-        {
-            return std::string(this->data(), N);
-        }
-
-        // Virtual function to get the name of the code (overridden in derived classes)
-        virtual std::string getName() const
-        {
-            return getValue(); // Default implementation returns the value itself
-        }
+        std::string_view getValue() const { return std::string_view(this->data(), N); }
+        virtual std::string getName() const = 0;
 
         // Overload the operator== for comparison
         bool operator==(const Code &other) const { return getValue() == other.getValue(); }
@@ -49,7 +42,7 @@ namespace JVData
 
         std::string getName() const override
         {
-            const std::string code = getValue();
+            const std::string_view code = getValue();
             if (code == "TK")
                 return "特別登録馬";
             if (code == "RA")
@@ -135,10 +128,7 @@ namespace JVData
     public:
         using Code<1>::Code; // Inherit constructor from Code<1>
 
-        virtual std::string getName() const override
-        {
-            return "不明"; // Default implementation returns "不明"
-        }
+        virtual std::string getName() const override { return "不明"; }
     };
 
     class KeibajoCode : public Code<2>
@@ -148,7 +138,7 @@ namespace JVData
 
         std::string getName() const override
         {
-            const std::string code = getValue();
+            const std::string_view code = getValue();
             if (code == "00")
                 return "なし";
             if (code == "01")
@@ -179,15 +169,6 @@ namespace JVData
         }
     };
 
-    class Key
-    {
-    public:
-        Key() {}
-        virtual ~Key() = default;
-        virtual std::string toString() const { return ""; }               // Default implementation returns an empty string;
-        virtual bool operator==(const Key &other) const { return false; } // Default implementation returns false
-    };
-
     // Record class with nested DataType implementation
     class Record
     {
@@ -195,17 +176,17 @@ namespace JVData
         const RecordType recordType;                      // レコード種別ID
         const std::unique_ptr<JVData::DataType> dataType; // データ区分
         const std::chrono::year_month_day creationDate;   // データ作成年月日
-        const std::unique_ptr<JVData::Key> key;           // レコードのキー
+        const std::string key;
 
     public:
         // Constructor for Record - 派生クラスがdataTypeを指定できるようにする
-        Record(const std::string &data, std::unique_ptr<JVData::DataType> dataType = nullptr, std::unique_ptr<JVData::Key> key = nullptr)
+        Record(const std::string &data, std::unique_ptr<JVData::DataType> dataType = nullptr, std::string key = "")
             : recordType(data.substr(0, 2)),
               dataType(dataType ? std::move(dataType) : std::make_unique<DataType>(data.substr(2, 1))),
               creationDate(std::chrono::year(std::stoi(data.substr(3, 4))),
                            std::chrono::month(std::stoi(data.substr(7, 2))),
                            std::chrono::day(std::stoi(data.substr(9, 2)))),
-              key(key ? std::move(key) : std::make_unique<Key>()) {}
+              key(std::move(key)) {}
 
         // Destructor
         virtual ~Record() = default; // Virtual destructor for proper cleanup of derived classes
@@ -214,7 +195,7 @@ namespace JVData
         const auto &getRecordType() const { return recordType; }
         const auto &getDataType() const { return *dataType; } // Return a reference to DataType
         const auto &getCreationDate() const { return creationDate; }
-        const auto &getKey() const { return *key; } // Return a reference to Key
+        virtual std::string_view getKey() { return key; }
     };
 
     class RARecord : public Record
@@ -228,7 +209,7 @@ namespace JVData
 
             std::string getName() const override
             {
-                const std::string code = getValue();
+                const std::string_view code = getValue();
                 if (code == "1")
                     return "出走馬名表 (木曜)";
                 if (code == "2")
@@ -255,39 +236,6 @@ namespace JVData
             }
         };
 
-        class Key : public JVData::Key
-        {
-        private:
-            const RARecord &record; // Reference to the RARecord instance
-
-        public:
-            Key(const RARecord &record) : record(record) {}
-
-            std::string toString() const override
-            {
-                std::stringstream ss;
-                ss << std::setfill('0') << std::setw(2) << static_cast<int>(record.kaisaiDate.year())
-                   << std::setfill('0') << std::setw(2) << static_cast<unsigned>(record.kaisaiDate.month())
-                   << std::setfill('0') << std::setw(2) << static_cast<unsigned>(record.kaisaiDate.day())
-                   << record.keibajoCode.getValue()
-                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.kaisaiKai)
-                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.kaisaiNichime)
-                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.kyosoBango);
-                return ss.str();
-            }
-
-            bool operator==(const Key &other) const
-            {
-                return record.kaisaiDate.year() == other.record.kaisaiDate.year() &&
-                       record.kaisaiDate.month() == other.record.kaisaiDate.month() &&
-                       record.kaisaiDate.day() == other.record.kaisaiDate.day() &&
-                       record.keibajoCode == other.record.keibajoCode &&
-                       record.kaisaiKai == other.record.kaisaiKai &&
-                       record.kaisaiNichime == other.record.kaisaiNichime &&
-                       record.kyosoBango == other.record.kyosoBango;
-            }
-        };
-
     private:
         const std::chrono::year_month_day kaisaiDate;
         const KeibajoCode keibajoCode;
@@ -299,7 +247,7 @@ namespace JVData
     public:
         // Constructor
         RARecord(const std::string &data)
-            : Record(data, std::make_unique<DataType>(data.substr(2, 1)), std::make_unique<Key>(*this)),
+            : Record(data, std::make_unique<DataType>(data.substr(2, 1)), data.substr(11, 16)),
               kaisaiDate(std::chrono::year(std::stoi(data.substr(11, 4))),
                          std::chrono::month(std::stoi(data.substr(15, 2))),
                          std::chrono::day(std::stoi(data.substr(17, 2)))),
@@ -320,43 +268,6 @@ namespace JVData
 
     class SERecord : public Record
     {
-    public:
-        class Key : public JVData::Key
-        {
-        private:
-            const SERecord &record; // Reference to the SERecord instance
-        public:
-            Key(const SERecord &record) : record(record) {}
-
-            std::string toString() const override
-            {
-                std::stringstream ss;
-                ss << std::setfill('0') << std::setw(2) << static_cast<int>(record.kaisaiDate.year())
-                   << std::setfill('0') << std::setw(2) << static_cast<unsigned>(record.kaisaiDate.month())
-                   << std::setfill('0') << std::setw(2) << static_cast<unsigned>(record.kaisaiDate.day())
-                   << record.keibajoCode.getValue()
-                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.kaisaiKai)
-                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.kaisaiNichime)
-                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.kyosoBango)
-                   << std::setfill('0') << std::setw(1) << static_cast<int>(record.wakuBango)
-                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.umaBango);
-                return ss.str();
-            }
-
-            bool operator==(const Key &other) const
-            {
-                return record.kaisaiDate.year() == other.record.kaisaiDate.year() &&
-                       record.kaisaiDate.month() == other.record.kaisaiDate.month() &&
-                       record.kaisaiDate.day() == other.record.kaisaiDate.day() &&
-                       record.keibajoCode == other.record.keibajoCode &&
-                       record.kaisaiKai == other.record.kaisaiKai &&
-                       record.kaisaiNichime == other.record.kaisaiNichime &&
-                       record.kyosoBango == other.record.kyosoBango &&
-                       record.wakuBango == other.record.wakuBango &&
-                       record.umaBango == other.record.umaBango;
-            }
-        };
-
     private:
         const std::chrono::year_month_day kaisaiDate;
         const KeibajoCode keibajoCode;
@@ -373,7 +284,7 @@ namespace JVData
     public:
         // Constructor
         SERecord(const std::string &data)
-            : Record(data, std::make_unique<RARecord::DataType>(data.substr(2, 1)), std::make_unique<Key>(*this)),
+            : Record(data, std::make_unique<RARecord::DataType>(data.substr(2, 1)), data.substr(11, 16) + data.substr(28, 12)),
               kaisaiDate(std::chrono::year(std::stoi(data.substr(11, 4))),
                          std::chrono::month(std::stoi(data.substr(15, 2))),
                          std::chrono::day(std::stoi(data.substr(17, 2)))),
@@ -419,7 +330,30 @@ namespace JVData
             else if (recordType == "SE")
                 return std::make_unique<SERecord>(data);
             else
-                return std::make_unique<Record>(data); // Fallback to base Record class
+                return std::make_unique<Record>(data); // Default to base class if type is unknown
+        }
+    };
+
+    class RecordManager
+    {
+        // TODO: キーが同じでもレコードタイプが異なれば別のレコードとして扱うようにする
+        // TODO: CreationDateが古い場合は上書きしないようにする
+        // TODO: レコードを参照するためのメソッドを追加する
+    private:
+        std::unordered_map<std::string_view, std::unique_ptr<Record>> recordsByKey;
+
+    public:
+        bool addOrUpdateRecord(std::unique_ptr<Record> record)
+        {
+            if (!record)
+                return false; // Invalid record
+
+            std::string_view key = record->getKey();
+            if (key.empty())
+                return false; // Invalid key
+
+            recordsByKey[key] = std::move(record); // Add or update the record
+            return true;
         }
     };
 }

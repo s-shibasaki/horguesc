@@ -24,12 +24,12 @@ int main(int argc, char *argv[])
 
 	else if (arg1 == "testkey")
 	{
-		auto key1 = JVData::Key();
-		auto key2 = JVData::Key();
-		std::cout << "key1: " << key1.toString() << std::endl;
-		std::cout << "key2: " << key2.toString() << std::endl;
-		std::cout << "key1 == key2: " << (key1 == key2) << std::endl;
-		std::cout << "key1 != key2: " << (key1 != key2) << std::endl;
+		// auto key1 = JVData::Key();
+		// auto key2 = JVData::Key();
+		// std::cout << "key1: " << key1.toString() << std::endl;
+		// std::cout << "key2: " << key2.toString() << std::endl;
+		// std::cout << "key1 == key2: " << (key1 == key2) << std::endl;
+		// std::cout << "key1 != key2: " << (key1 != key2) << std::endl;
 	}
 
 	else if (arg1 == "testinteger")
@@ -202,7 +202,8 @@ int main(int argc, char *argv[])
 				try
 				{
 					std::unique_ptr<JVData::Record> record = JVData::RecordFactory::createRecord(line);
-					records.push_back(std::move(record)); // store the record in the vector
+					if (record != nullptr)
+						records.push_back(std::move(record)); // store the record in the vector
 				}
 				catch (const std::exception &e)
 				{
@@ -223,7 +224,7 @@ int main(int argc, char *argv[])
 				std::cout << "Data type: " << records[i]->getDataType().getName() << std::endl;
 
 				// Key情報の表示を追加
-				std::cout << "Key: " << records[i]->getKey().toString() << std::endl;
+				std::cout << "Key: " << records[i]->getKey() << std::endl;
 
 				// 同一レコード種別の比較を行い、キーの一致確認を行う (1つ前のレコードと比較)
 				if (i > startIndex)

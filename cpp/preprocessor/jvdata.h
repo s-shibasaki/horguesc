@@ -182,41 +182,10 @@ namespace JVData
         }
     };
 
-    class YobiCode : public Code<1>
-    {
-    public:
-        using Code<1>::Code; // Inherit constructor from Code<1>
-
-        std::string getName() const override
-        {
-            const std::string code = getValue();
-            if (code == "0")
-                return "なし";
-            if (code == "1")
-                return "土曜";
-            if (code == "2")
-                return "日曜";
-            if (code == "3")
-                return "祝日";
-            if (code == "4")
-                return "月曜";
-            if (code == "5")
-                return "火曜";
-            if (code == "6")
-                return "水曜";
-            if (code == "7")
-                return "木曜";
-            if (code == "8")
-                return "金曜";
-            return "不明";
-        }
-    };
-
     // Record class with nested DataType implementation
     class Record
     {
     private:
-        const std::string data;                           // raw data string
         const RecordType recordType;                      // レコード種別ID
         const std::unique_ptr<JVData::DataType> dataType; // データ区分 - constを追加
         const std::chrono::year_month_day creationDate;   // データ作成年月日
@@ -224,8 +193,7 @@ namespace JVData
     public:
         // Constructor for Record - 派生クラスがdataTypeを指定できるようにする
         Record(const std::string &data, std::unique_ptr<JVData::DataType> dataType = nullptr)
-            : data(data),
-              recordType(data.substr(0, 2)),
+            : recordType(data.substr(0, 2)),
               dataType(dataType ? std::move(dataType) : std::make_unique<DataType>(data.substr(2, 1))),
               creationDate(std::chrono::year(std::stoi(data.substr(3, 4))),
                            std::chrono::month(std::stoi(data.substr(7, 2))),
@@ -235,17 +203,15 @@ namespace JVData
         virtual ~Record() = default; // Virtual destructor for proper cleanup of derived classes
 
         // Getters for Record properties
-        const std::string &getData() const { return data; }
-        const RecordType &getRecordType() const { return recordType; }
-        const DataType &getDataType() const { return *dataType; } // Return a reference to DataType
-        const std::chrono::year_month_day &getCreationDate() const { return creationDate; }
+        const auto &getRecordType() const { return recordType; }
+        const auto &getDataType() const { return *dataType; } // Return a reference to DataType
+        const auto &getCreationDate() const { return creationDate; }
     };
 
-    // TK specific body implementation
-    class TKRecord : public Record
+    class RARecord : public Record
     {
     public:
-        // Nested DataType class specific to TKRecord
+        // DataType class for RARecord
         class DataType : public JVData::DataType
         {
         public:
@@ -254,52 +220,110 @@ namespace JVData
             std::string getName() const override
             {
                 const std::string code = getValue();
+                if (code == "1")
+                    return "出走馬名表 (木曜)";
+                if (code == "2")
+                    return "出馬表 (金・土曜)";
+                if (code == "3")
+                    return "速報成績 (3着まで確定)";
+                if (code == "4")
+                    return "速報成績 (5着まで確定)";
+                if (code == "5")
+                    return "速報成績 (全馬着順確定)";
+                if (code == "6")
+                    return "速報成績 (全馬着順 + コーナ通過順)";
+                if (code == "7")
+                    return "成績 (月曜)";
+                if (code == "A")
+                    return "地方競馬";
+                if (code == "B")
+                    return "海外国際レース";
+                if (code == "9")
+                    return "レース中止";
                 if (code == "0")
                     return "該当レコード削除 (提供ミスなどの理由による)";
-                if (code == "1")
-                    return "ハンデ発表前 (通常日曜)";
-                if (code == "2")
-                    return "ハンデ発表後 (通常月曜)";
                 return "不明";
             }
         };
 
     private:
-        // Key fields for TK records
-        const std::chrono::year year;
-        const std::chrono::month_day monthDay;
+        const std::chrono::year_month_day kaisaiDate;
         const KeibajoCode keibajoCode;
-        const int kaisaiKai;
-        const int kaisaiNichime;
-        const int kyosoBango;
-
-        // Additional fields
-        const YobiCode yobiCode;
+        const uint8_t kaisaiKai;
+        const uint8_t kaisaiNichime;
+        const uint8_t kyosoBango;
+        const uint16_t kyori;
 
     public:
-        // TKRecord constructor
-        TKRecord(const std::string &data)
+        // Constructor
+        RARecord(const std::string &data)
             : Record(data, std::make_unique<DataType>(data.substr(2, 1))),
-              year(std::stoi(data.substr(11, 4))),
-              monthDay(std::chrono::month(std::stoi(data.substr(15, 2))),
-                       std::chrono::day(std::stoi(data.substr(17, 2)))),
+              kaisaiDate(std::chrono::year(std::stoi(data.substr(11, 4))),
+                         std::chrono::month(std::stoi(data.substr(15, 2))),
+                         std::chrono::day(std::stoi(data.substr(17, 2)))),
               keibajoCode(data.substr(19, 2)),
               kaisaiKai(std::stoi(data.substr(21, 2))),
               kaisaiNichime(std::stoi(data.substr(23, 2))),
               kyosoBango(std::stoi(data.substr(25, 2))),
-              yobiCode(data.substr(27, 1)) {}
+              kyori(std::stoi(data.substr(697, 4))) {}
 
-        // Getters for TK-specific properties
-        const std::chrono::year &getYear() const { return year; }
-        const std::chrono::month_day &getMonthDay() const { return monthDay; }
-        const KeibajoCode &getKeibajoCode() const { return keibajoCode; }
-        const int &getKaisaiKai() const { return kaisaiKai; }
-        const int &getKaisaiNichime() const { return kaisaiNichime; }
-        const int &getKyosoBango() const { return kyosoBango; }
+        // Getters for RA-specific properties
+        const auto &getKaisaiDate() const { return kaisaiDate; }
+        const auto &getKeibajoCode() const { return keibajoCode; }
+        const auto &getKaisaiKai() const { return kaisaiKai; }
+        const auto &getKaisaiNichime() const { return kaisaiNichime; }
+        const auto &getKyosoBango() const { return kyosoBango; }
+        const auto &getKyori() const { return kyori; } // Get the distance
     };
 
-    class RARecord : public Record
+    class SERecord : public Record
     {
+    public:
+        using DataType = RARecord::DataType; // Use RARecord's DataType for SERecord
+
+    private:
+        const std::chrono::year_month_day kaisaiDate;
+        const KeibajoCode keibajoCode;
+        const uint8_t kaisaiKai;
+        const uint8_t kaisaiNichime;
+        const uint8_t kyosoBango;
+        const uint8_t wakuBango;
+        const uint8_t umaBango;
+        const uint64_t kettoTorokuBango;
+        const uint8_t barei;
+        const uint16_t futanJuryo;
+        const bool blinker;
+
+    public:
+        // Constructor
+        SERecord(const std::string &data)
+            : Record(data, std::make_unique<DataType>(data.substr(2, 1))),
+              kaisaiDate(std::chrono::year(std::stoi(data.substr(11, 4))),
+                         std::chrono::month(std::stoi(data.substr(15, 2))),
+                         std::chrono::day(std::stoi(data.substr(17, 2)))),
+              keibajoCode(data.substr(19, 2)),
+              kaisaiKai(std::stoi(data.substr(21, 2))),
+              kaisaiNichime(std::stoi(data.substr(23, 2))),
+              kyosoBango(std::stoi(data.substr(25, 2))),
+              wakuBango(std::stoi(data.substr(27, 1))),
+              umaBango(std::stoi(data.substr(28, 2))),
+              kettoTorokuBango(std::stoull(data.substr(30, 10))),
+              barei(std::stoi(data.substr(82, 2))),
+              futanJuryo(std::stoi(data.substr(288, 3))),
+              blinker((data[294] == '1')) {}
+
+        // Getters for SE-specific properties
+        const auto &getKaisaiDate() const { return kaisaiDate; }
+        const auto &getKeibajoCode() const { return keibajoCode; }
+        const auto &getKaisaiKai() const { return kaisaiKai; }
+        const auto &getKaisaiNichime() const { return kaisaiNichime; }
+        const auto &getKyosoBango() const { return kyosoBango; }
+        const auto &getWakuBango() const { return wakuBango; }
+        const auto &getUmaBango() const { return umaBango; }
+        const auto &getKettoTorokuBango() const { return kettoTorokuBango; }
+        const auto &getBarei() const { return barei; }
+        float getFutanJuryo() const { return futanJuryo / 10.0f; }
+        const auto &getBlinker() const { return blinker; }
     };
 
     // Factory class for creating Record objects based on record type
@@ -314,8 +338,10 @@ namespace JVData
             std::string recordType = data.substr(0, 2);
 
             // Create the appropriate record based on record type
-            if (recordType == "TK")
-                return std::make_unique<TKRecord>(data);
+            if (recordType == "RA")
+                return std::make_unique<RARecord>(data);
+            else if (recordType == "SE")
+                return std::make_unique<SERecord>(data);
             else
                 return std::make_unique<Record>(data); // Fallback to base Record class
         }

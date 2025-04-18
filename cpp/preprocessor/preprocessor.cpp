@@ -1,5 +1,7 @@
 ﻿#include <iostream>
 #include <fstream>
+#include <limits>
+#include <iomanip> // std::setprecision のために追加
 #include "jvdata.h"
 
 using namespace std::literals;
@@ -8,11 +10,157 @@ int main(int argc, char *argv[])
 {
 	if (argc == 1)
 	{
-		std::cerr << "Usage: " << argv[0] << " [testcommon|testdata]" << std::endl;
+		std::cerr << "Usage: " << argv[0] << " [hello|testinteger|testfloat|testdata]" << std::endl;
 		return 1;
 	}
 
-	if (strcmp(argv[1], "testdata") == 0)
+	std::string_view arg1(argv[1]);
+
+	if (arg1 == "hello")
+	{
+		std::cout << "Hello, World!" << std::endl;
+		return 0;
+	}
+
+	else if (arg1 == "testinteger")
+	{
+		std::cout << "整数型の情報：" << std::endl;
+		std::cout << "========================================" << std::endl;
+
+		// 標準整数型の範囲
+		std::cout << "【標準整数型の範囲】" << std::endl;
+		std::cout << "----------------------------------------" << std::endl;
+		std::cout << "char:           " << std::setw(20) << static_cast<int>(std::numeric_limits<char>::min())
+				  << " から " << std::setw(20) << static_cast<int>(std::numeric_limits<char>::max()) << std::endl;
+		std::cout << "signed char:    " << std::setw(20) << static_cast<int>(std::numeric_limits<signed char>::min())
+				  << " から " << std::setw(20) << static_cast<int>(std::numeric_limits<signed char>::max()) << std::endl;
+		std::cout << "unsigned char:  " << std::setw(20) << static_cast<int>(std::numeric_limits<unsigned char>::min())
+				  << " から " << std::setw(20) << static_cast<int>(std::numeric_limits<unsigned char>::max()) << std::endl;
+		std::cout << "short:          " << std::setw(20) << std::numeric_limits<short>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<short>::max() << std::endl;
+		std::cout << "unsigned short: " << std::setw(20) << std::numeric_limits<unsigned short>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<unsigned short>::max() << std::endl;
+		std::cout << "int:            " << std::setw(20) << std::numeric_limits<int>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<int>::max() << std::endl;
+		std::cout << "unsigned int:   " << std::setw(20) << std::numeric_limits<unsigned int>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<unsigned int>::max() << std::endl;
+		std::cout << "long:           " << std::setw(20) << std::numeric_limits<long>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<long>::max() << std::endl;
+		std::cout << "unsigned long:  " << std::setw(20) << std::numeric_limits<unsigned long>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<unsigned long>::max() << std::endl;
+		std::cout << "long long:      " << std::setw(20) << std::numeric_limits<long long>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<long long>::max() << std::endl;
+		std::cout << "unsigned long long: " << std::setw(16) << std::numeric_limits<unsigned long long>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<unsigned long long>::max() << std::endl;
+
+		// 固定幅整数型の範囲
+		std::cout << "\n【固定幅整数型の範囲】" << std::endl;
+		std::cout << "----------------------------------------" << std::endl;
+		std::cout << "int8_t:         " << std::setw(20) << static_cast<int>(std::numeric_limits<int8_t>::min())
+				  << " から " << std::setw(20) << static_cast<int>(std::numeric_limits<int8_t>::max()) << std::endl;
+		std::cout << "uint8_t:        " << std::setw(20) << static_cast<int>(std::numeric_limits<uint8_t>::min())
+				  << " から " << std::setw(20) << static_cast<int>(std::numeric_limits<uint8_t>::max()) << std::endl;
+		std::cout << "int16_t:        " << std::setw(20) << std::numeric_limits<int16_t>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<int16_t>::max() << std::endl;
+		std::cout << "uint16_t:       " << std::setw(20) << std::numeric_limits<uint16_t>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<uint16_t>::max() << std::endl;
+		std::cout << "int32_t:        " << std::setw(20) << std::numeric_limits<int32_t>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<int32_t>::max() << std::endl;
+		std::cout << "uint32_t:       " << std::setw(20) << std::numeric_limits<uint32_t>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<uint32_t>::max() << std::endl;
+		std::cout << "int64_t:        " << std::setw(20) << std::numeric_limits<int64_t>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<int64_t>::max() << std::endl;
+		std::cout << "uint64_t:       " << std::setw(20) << std::numeric_limits<uint64_t>::min()
+				  << " から " << std::setw(20) << std::numeric_limits<uint64_t>::max() << std::endl;
+
+		// 各型のバイトサイズ
+		std::cout << "\n【各型のバイトサイズ】" << std::endl;
+		std::cout << "----------------------------------------" << std::endl;
+		std::cout << "標準整数型:" << std::endl;
+		std::cout << "char:           " << sizeof(char) << " バイト" << std::endl;
+		std::cout << "short:          " << sizeof(short) << " バイト" << std::endl;
+		std::cout << "int:            " << sizeof(int) << " バイト" << std::endl;
+		std::cout << "long:           " << sizeof(long) << " バイト" << std::endl;
+		std::cout << "long long:      " << sizeof(long long) << " バイト" << std::endl;
+
+		std::cout << "\n固定幅整数型:" << std::endl;
+		std::cout << "int8_t:         " << sizeof(int8_t) << " バイト" << std::endl;
+		std::cout << "uint8_t:        " << sizeof(uint8_t) << " バイト" << std::endl;
+		std::cout << "int16_t:        " << sizeof(int16_t) << " バイト" << std::endl;
+		std::cout << "uint16_t:       " << sizeof(uint16_t) << " バイト" << std::endl;
+		std::cout << "int32_t:        " << sizeof(int32_t) << " バイト" << std::endl;
+		std::cout << "uint32_t:       " << sizeof(uint32_t) << " バイト" << std::endl;
+		std::cout << "int64_t:        " << sizeof(int64_t) << " バイト" << std::endl;
+		std::cout << "uint64_t:       " << sizeof(uint64_t) << " バイト" << std::endl;
+
+		return 0;
+	}
+
+	else if (arg1 == "testfloat")
+	{
+		std::cout << "浮動小数点型の情報：" << std::endl;
+		std::cout << "========================================" << std::endl;
+
+		// 精度を高く設定
+		std::cout << std::setprecision(std::numeric_limits<long double>::digits10 + 1);
+
+		// 最大値・最小値
+		std::cout << "【最大値と最小値】" << std::endl;
+		std::cout << "----------------------------------------" << std::endl;
+		std::cout << "float 最小値:      " << std::numeric_limits<float>::min() << std::endl;
+		std::cout << "float 最大値:      " << std::numeric_limits<float>::max() << std::endl;
+		std::cout << "double 最小値:     " << std::numeric_limits<double>::min() << std::endl;
+		std::cout << "double 最大値:     " << std::numeric_limits<double>::max() << std::endl;
+		std::cout << "long double 最小値: " << std::numeric_limits<long double>::min() << std::endl;
+		std::cout << "long double 最大値: " << std::numeric_limits<long double>::max() << std::endl;
+
+		// 精度
+		std::cout << "\n【精度 (有効桁数)】" << std::endl;
+		std::cout << "----------------------------------------" << std::endl;
+		std::cout << "float:             " << std::numeric_limits<float>::digits10 << " 桁" << std::endl;
+		std::cout << "double:            " << std::numeric_limits<double>::digits10 << " 桁" << std::endl;
+		std::cout << "long double:       " << std::numeric_limits<long double>::digits10 << " 桁" << std::endl;
+
+		// イプシロン（1.0より大きい最小の値と1.0の差）
+		std::cout << "\n【イプシロン値】" << std::endl;
+		std::cout << "----------------------------------------" << std::endl;
+		std::cout << "float epsilon:      " << std::numeric_limits<float>::epsilon() << std::endl;
+		std::cout << "double epsilon:     " << std::numeric_limits<double>::epsilon() << std::endl;
+		std::cout << "long double epsilon: " << std::numeric_limits<long double>::epsilon() << std::endl;
+
+		// サイズ
+		std::cout << "\n【バイトサイズ】" << std::endl;
+		std::cout << "----------------------------------------" << std::endl;
+		std::cout << "float:             " << sizeof(float) << " バイト" << std::endl;
+		std::cout << "double:            " << sizeof(double) << " バイト" << std::endl;
+		std::cout << "long double:       " << sizeof(long double) << " バイト" << std::endl;
+
+		// 特殊な値
+		std::cout << "\n【特殊な値】" << std::endl;
+		std::cout << "----------------------------------------" << std::endl;
+		std::cout << "float 無限大:      " << std::numeric_limits<float>::infinity() << std::endl;
+		std::cout << "float NaN:         " << std::numeric_limits<float>::quiet_NaN() << std::endl;
+		std::cout << "double 無限大:     " << std::numeric_limits<double>::infinity() << std::endl;
+		std::cout << "double NaN:        " << std::numeric_limits<double>::quiet_NaN() << std::endl;
+
+		// 実際の計算例
+		std::cout << "\n【計算例】" << std::endl;
+		std::cout << "----------------------------------------" << std::endl;
+
+		float f1 = 0.1f;
+		float f2 = 0.2f;
+		float f3 = f1 + f2;
+		std::cout << "float:  0.1 + 0.2 = " << f3 << std::endl;
+
+		double d1 = 0.1;
+		double d2 = 0.2;
+		double d3 = d1 + d2;
+		std::cout << "double: 0.1 + 0.2 = " << d3 << std::endl;
+
+		return 0;
+	}
+
+	else if (arg1 == "testdata")
 	{
 
 		try
@@ -34,52 +182,71 @@ int main(int argc, char *argv[])
 			file.seekg(0, std::ios::beg);
 			std::cout << "File size: " << fileSize << " bytes" << std::endl;
 
+			// initialize record vector
+			std::vector<std::unique_ptr<JVData::Record>> records;
+
 			// read the file line by line
-			int recordCount = 0;
 			std::string line;
-
-			while (std::getline(file, line))
+			while (std::getline(file, line) && records.size() < 51210)
 			{
-				// add 1 to the record count
-				recordCount++;
-
 				try
 				{
-					// Create the appropriate Record object based on line content
 					std::unique_ptr<JVData::Record> record = JVData::RecordFactory::createRecord(line);
-
-					// Type-specific processing if needed
-					if (record->getRecordType() == "TK")
-					{
-						// Common processing
-						std::cout << "Record " << recordCount << ":" << std::endl;
-						std::cout << "  Record Type: " << record->getRecordType() << std::endl;
-						std::cout << "  Data Type: " << record->getDataType() << std::endl;
-						std::cout << "  Creation Date: " << record->getCreationDate() << std::endl;
-
-						// TKRecord specific processing
-						auto tkRecord = dynamic_cast<const JVData::TKRecord *>(record.get());
-						if (tkRecord)
-						{
-							std::cout << "  Year: " << tkRecord->getYear() << std::endl;
-							std::cout << "  Month/Day: " << tkRecord->getMonthDay() << std::endl;
-							std::cout << "  Keibajo Code: " << tkRecord->getKeibajoCode() << std::endl;
-							std::cout << "  Kaisai Kai: " << tkRecord->getKaisaiKai() << std::endl;
-							std::cout << "  Kaisai Nichime: " << tkRecord->getKaisaiNichime() << std::endl;
-							std::cout << "  Kyoso Bango: " << tkRecord->getKyosoBango() << std::endl;
-						}
-					}
+					records.push_back(std::move(record)); // store the record in the vector
 				}
 				catch (const std::exception &e)
 				{
-					std::cerr << "Error processing record " << recordCount << ": " << e.what() << std::endl;
-					return 1;
+					std::cerr << "Error processing line: " << e.what() << std::endl;
+					continue; // skip to the next line on error
 				}
 			}
-
 			file.close();
+			std::cout << "Total records processed: " << records.size() << std::endl;
 
-			std::cout << "Total records: " << recordCount << std::endl;
+			// Display the last 10 records
+			std::cout << "\n--- Last 10 Records ---" << std::endl;
+			size_t startIndex = records.size() > 10 ? records.size() - 10 : 0;
+			for (size_t i = startIndex; i < records.size(); i++)
+			{
+				std::cout << "Record " << (i + 1) << ": " << records[i]->getRecordType().getName() << std::endl;
+				std::cout << "Creation date: " << records[i]->getCreationDate() << std::endl;
+				std::cout << "Data type: " << records[i]->getDataType().getName() << std::endl;
+
+				if (records[i]->getRecordType() == "RA")
+				{
+					auto raRecord = dynamic_cast<JVData::RARecord *>(records[i].get());
+					if (raRecord)
+					{
+						std::cout << "Kaisai Date: " << raRecord->getKaisaiDate() << std::endl;
+						std::cout << "Keibajo Name: " << raRecord->getKeibajoCode().getName() << std::endl;
+						std::cout << "Kaisai Kai: " << raRecord->getKaisaiKai() << std::endl;
+						std::cout << "Kaisai Nichime: " << raRecord->getKaisaiNichime() << std::endl;
+						std::cout << "Kyoso Bango: " << raRecord->getKyosoBango() << std::endl;
+						std::cout << "Kyori: " << raRecord->getKyori() << std::endl;
+					}
+				}
+				else if (records[i]->getRecordType() == "SE")
+				{
+					auto seRecord = dynamic_cast<JVData::SERecord *>(records[i].get());
+					if (seRecord)
+					{
+						std::cout << "Kaisai Date: " << seRecord->getKaisaiDate() << std::endl;
+						std::cout << "Keibajo Name: " << seRecord->getKeibajoCode().getName() << std::endl;
+						std::cout << "Kaisai Kai: " << seRecord->getKaisaiKai() << std::endl;
+						std::cout << "Kaisai Nichime: " << seRecord->getKaisaiNichime() << std::endl;
+						std::cout << "Kyoso Bango: " << seRecord->getKyosoBango() << std::endl;
+						std::cout << "Waku Bango: " << static_cast<int>(seRecord->getWakuBango()) << std::endl;
+						std::cout << "Uma Bango: " << static_cast<int>(seRecord->getUmaBango()) << std::endl;
+						std::cout << "Ketto Toroku Bango: " << seRecord->getKettoTorokuBango() << std::endl;
+						std::cout << "Barei: " << static_cast<int>(seRecord->getBarei()) << " 歳" << std::endl;
+						std::cout << "Futan Juryo: " << seRecord->getFutanJuryo() << " kg" << std::endl;
+						std::cout << "Blinker: " << (seRecord->getBlinker() ? "あり" : "なし") << std::endl;
+					}
+				}
+
+				std::cout << "------------------------" << std::endl;
+			}
+
 			return 0;
 		}
 
@@ -92,7 +259,7 @@ int main(int argc, char *argv[])
 
 	else
 	{
-		std::cerr << "Error: Invalid argument provided.";
+		std::cerr << "Error: Invalid argument '" << arg1 << "'" << std::endl;
 		return 1;
 	}
 }

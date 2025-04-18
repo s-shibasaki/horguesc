@@ -172,7 +172,6 @@ int main(int argc, char *argv[])
 
 	else if (arg1 == "testdata")
 	{
-
 		try
 		{
 			// specify the path to the data file (data/jvd.dat)
@@ -192,18 +191,27 @@ int main(int argc, char *argv[])
 			file.seekg(0, std::ios::beg);
 			std::cout << "File size: " << fileSize << " bytes" << std::endl;
 
-			// initialize record vector
-			std::vector<std::unique_ptr<JVData::Record>> records;
+			// initialize record manager
+			JVData::RecordManager recordManager;
+			int processedCount = 0;
+			int storedCount = 0;
 
 			// read the file line by line
 			std::string line;
-			while (std::getline(file, line) && records.size() < 51210)
+			while (std::getline(file, line) && processedCount < 51210)
 			{
 				try
 				{
 					std::unique_ptr<JVData::Record> record = JVData::RecordFactory::createRecord(line);
 					if (record != nullptr)
-						records.push_back(std::move(record)); // store the record in the vector
+					{
+						processedCount++;
+						// Try to add the record to the manager
+						if (recordManager.addOrUpdateRecord(std::move(record)))
+						{
+							storedCount++;
+						}
+					}
 				}
 				catch (const std::exception &e)
 				{
@@ -212,69 +220,18 @@ int main(int argc, char *argv[])
 				}
 			}
 			file.close();
-			std::cout << "Total records processed: " << records.size() << std::endl;
+			std::cout << "Total records processed: " << processedCount << std::endl;
+			std::cout << "Records stored in manager: " << storedCount << std::endl;
 
-			// Display the last 10 records
-			std::cout << "\n--- Last 10 Records ---" << std::endl;
-			size_t startIndex = records.size() > 10 ? records.size() - 10 : 0;
-			for (size_t i = startIndex; i < records.size(); i++)
-			{
-				std::cout << "Record " << (i + 1) << ": " << records[i]->getRecordType().getName() << std::endl;
-				std::cout << "Creation date: " << records[i]->getCreationDate() << std::endl;
-				std::cout << "Data type: " << records[i]->getDataType().getName() << std::endl;
+			// TODO: We need to modify RecordManager to provide access to stored records
+			// For now, we can't display the last 10 records since RecordManager doesn't provide
+			// a way to access its records in order
 
-				// Key情報の表示を追加
-				std::cout << "Key: " << records[i]->getKey() << std::endl;
-
-				// 同一レコード種別の比較を行い、キーの一致確認を行う (1つ前のレコードと比較)
-				if (i > startIndex)
-				{
-					if (records[i]->getRecordType() == records[i - 1]->getRecordType())
-					{
-						std::cout << "Key comparison with previous record: "
-								  << (records[i]->getKey() == records[i - 1]->getKey() ? "Same" : "Different")
-								  << std::endl;
-					}
-				}
-
-				if (records[i]->getRecordType() == "RA")
-				{
-					auto raRecord = dynamic_cast<JVData::RARecord *>(records[i].get());
-					if (raRecord)
-					{
-						std::cout << "Kaisai Date: " << raRecord->getKaisaiDate() << std::endl;
-						std::cout << "Keibajo Name: " << raRecord->getKeibajoCode().getName() << std::endl;
-						std::cout << "Kaisai Kai: " << raRecord->getKaisaiKai() << std::endl;
-						std::cout << "Kaisai Nichime: " << raRecord->getKaisaiNichime() << std::endl;
-						std::cout << "Kyoso Bango: " << raRecord->getKyosoBango() << std::endl;
-						std::cout << "Kyori: " << raRecord->getKyori() << std::endl;
-					}
-				}
-				else if (records[i]->getRecordType() == "SE")
-				{
-					auto seRecord = dynamic_cast<JVData::SERecord *>(records[i].get());
-					if (seRecord)
-					{
-						std::cout << "Kaisai Date: " << seRecord->getKaisaiDate() << std::endl;
-						std::cout << "Keibajo Name: " << seRecord->getKeibajoCode().getName() << std::endl;
-						std::cout << "Kaisai Kai: " << seRecord->getKaisaiKai() << std::endl;
-						std::cout << "Kaisai Nichime: " << seRecord->getKaisaiNichime() << std::endl;
-						std::cout << "Kyoso Bango: " << seRecord->getKyosoBango() << std::endl;
-						std::cout << "Waku Bango: " << static_cast<int>(seRecord->getWakuBango()) << std::endl;
-						std::cout << "Uma Bango: " << static_cast<int>(seRecord->getUmaBango()) << std::endl;
-						std::cout << "Ketto Toroku Bango: " << seRecord->getKettoTorokuBango() << std::endl;
-						std::cout << "Barei: " << static_cast<int>(seRecord->getBarei()) << " 歳" << std::endl;
-						std::cout << "Futan Juryo: " << seRecord->getFutanJuryo() << " kg" << std::endl;
-						std::cout << "Blinker: " << (seRecord->getBlinker() ? "あり" : "なし") << std::endl;
-					}
-				}
-
-				std::cout << "------------------------" << std::endl;
-			}
+			std::cout << "\nNote: To display records from the RecordManager, we need to add methods to access them." << std::endl;
+			std::cout << "Currently, RecordManager only supports adding/updating records." << std::endl;
 
 			return 0;
 		}
-
 		catch (const std::exception &e)
 		{
 			std::cerr << "Error: " << e.what() << std::endl;

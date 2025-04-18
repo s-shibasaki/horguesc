@@ -340,10 +340,23 @@ namespace JVData
         // TODO: CreationDateが古い場合は上書きしないようにする
         // TODO: レコードを参照するためのメソッドを追加する
     private:
-        std::unordered_map<std::string_view, std::unique_ptr<Record>> recordsByKey;
+        // Use a composit key of record type + key
+        using CompositeKey = std::pair<std::string, std::string_view>;
+
+        // Hash function for the composite key
+        struct CompositeKeyHash
+        {
+            std::size_t operator()(const CompositeKey &key) const
+            {
+                return std::hash<std::string>{}(key.first) ^ std::hash<std::string_view>{}(key.second);
+            }
+        };
+
+        std::unordered_map<CompositeKey, std::unique_ptr<Record>, CompositeKeyHash> records;
 
     public:
-        bool addOrUpdateRecord(std::unique_ptr<Record> record)
+        bool
+        addOrUpdateRecord(std::unique_ptr<Record> record)
         {
             if (!record)
                 return false; // Invalid record
@@ -352,7 +365,25 @@ namespace JVData
             if (key.empty())
                 return false; // Invalid key
 
-            recordsByKey[key] = std::move(record); // Add or update the record
+            // Create composite key with record type and key
+            std::string recordTypeStr = std::string(record->getRecordType().getValue());
+            CompositeKey compositeKey(recordTypeStr, key);
+
+            // Check if we already have this record
+            auto it = records.find(compositeKey);
+            if (it != records.end())
+            {
+                // Check if existing record has a newer creation date
+                auto existingDate = it->second->getCreationDate();
+                auto newDate = record->getCreationDate();
+
+                // Only update if the new record has a newer or equal date
+                if (newDate < existingDate)
+                    return false; // Don't update with older data
+            }
+
+            // Add or update the record
+            records[compositeKey] = std::move(record);
             return true;
         }
     };

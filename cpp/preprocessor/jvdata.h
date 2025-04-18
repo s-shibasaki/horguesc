@@ -320,6 +320,43 @@ namespace JVData
 
     class SERecord : public Record
     {
+    public:
+        class Key : public JVData::Key
+        {
+        private:
+            const SERecord &record; // Reference to the SERecord instance
+        public:
+            Key(const SERecord &record) : record(record) {}
+
+            std::string toString() const override
+            {
+                std::stringstream ss;
+                ss << std::setfill('0') << std::setw(2) << static_cast<int>(record.kaisaiDate.year())
+                   << std::setfill('0') << std::setw(2) << static_cast<unsigned>(record.kaisaiDate.month())
+                   << std::setfill('0') << std::setw(2) << static_cast<unsigned>(record.kaisaiDate.day())
+                   << record.keibajoCode.getValue()
+                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.kaisaiKai)
+                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.kaisaiNichime)
+                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.kyosoBango)
+                   << std::setfill('0') << std::setw(1) << static_cast<int>(record.wakuBango)
+                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.umaBango);
+                return ss.str();
+            }
+
+            bool operator==(const Key &other) const
+            {
+                return record.kaisaiDate.year() == other.record.kaisaiDate.year() &&
+                       record.kaisaiDate.month() == other.record.kaisaiDate.month() &&
+                       record.kaisaiDate.day() == other.record.kaisaiDate.day() &&
+                       record.keibajoCode == other.record.keibajoCode &&
+                       record.kaisaiKai == other.record.kaisaiKai &&
+                       record.kaisaiNichime == other.record.kaisaiNichime &&
+                       record.kyosoBango == other.record.kyosoBango &&
+                       record.wakuBango == other.record.wakuBango &&
+                       record.umaBango == other.record.umaBango;
+            }
+        };
+
     private:
         const std::chrono::year_month_day kaisaiDate;
         const KeibajoCode keibajoCode;
@@ -336,7 +373,7 @@ namespace JVData
     public:
         // Constructor
         SERecord(const std::string &data)
-            : Record(data, std::make_unique<RARecord::DataType>(data.substr(2, 1))),
+            : Record(data, std::make_unique<RARecord::DataType>(data.substr(2, 1)), std::make_unique<Key>(*this)),
               kaisaiDate(std::chrono::year(std::stoi(data.substr(11, 4))),
                          std::chrono::month(std::stoi(data.substr(15, 2))),
                          std::chrono::day(std::stoi(data.substr(17, 2)))),

@@ -198,7 +198,7 @@ int main(int argc, char *argv[])
 
 			// read the file line by line
 			std::string line;
-			while (std::getline(file, line) && processedCount < 51210)
+			while (std::getline(file, line))
 			{
 				try
 				{
@@ -223,12 +223,69 @@ int main(int argc, char *argv[])
 			std::cout << "Total records processed: " << processedCount << std::endl;
 			std::cout << "Records stored in manager: " << storedCount << std::endl;
 
-			// TODO: We need to modify RecordManager to provide access to stored records
-			// For now, we can't display the last 10 records since RecordManager doesn't provide
-			// a way to access its records in order
+			// Display statistics
+			std::cout << "\n===== レコード処理統計 =====" << std::endl;
+			std::cout << "総処理レコード数: " << processedCount << " 件" << std::endl;
+			std::cout << "新規追加レコード: " << recordManager.getAddedCount() << " 件" << std::endl;
+			std::cout << "更新されたレコード: " << recordManager.getUpdatedCount() << " 件" << std::endl;
+			std::cout << "スキップされたレコード (古いデータ): " << recordManager.getSkippedCount() << " 件" << std::endl;
+			std::cout << "エラーレコード: " << recordManager.getErrorCount() << " 件" << std::endl;
+			std::cout << "格納レコード総数: " << recordManager.size() << " 件" << std::endl;
 
-			std::cout << "\nNote: To display records from the RecordManager, we need to add methods to access them." << std::endl;
-			std::cout << "Currently, RecordManager only supports adding/updating records." << std::endl;
+			// レコードマネージャーの内容を表示するセクション
+			std::cout << "\n===== レコード管理システム情報 =====" << std::endl;
+			std::cout << "格納レコード総数: " << recordManager.size() << " 件" << std::endl;
+
+			// レコードタイプ別のカウント
+			std::unordered_map<std::string, int> typeCounts;
+			recordManager.forEach([&typeCounts](const JVData::Record &record)
+								  { std::string typeStr(record.getRecordType().getValue());
+									typeCounts[typeStr]++; });
+
+			// レコードタイプ別の件数を表示
+			std::cout << "\n===== レコードタイプ別集計 =====" << std::endl;
+			for (const auto &[type, count] : typeCounts)
+			{
+				std::cout << type << ": " << count << " 件" << std::endl;
+			}
+
+			// レースデータ（RAレコード）のサンプル表示
+			std::cout << "\n===== レースデータ(RA)のサンプル =====" << std::endl;
+			int raDisplayCount = 0;
+			recordManager.forEachOfType("RA", [&raDisplayCount](const JVData::Record &record)
+										{
+				if (raDisplayCount < 3) { // 3件だけ表示
+					std::cout << "\n--- RAレコード " << (raDisplayCount + 1) << " ---" << std::endl;
+					record.display();
+					raDisplayCount++;
+				} });
+
+			// 出走馬データ（SEレコード）のサンプル表示
+			std::cout << "\n===== 出走馬データ(SE)のサンプル =====" << std::endl;
+			int seDisplayCount = 0;
+			recordManager.forEachOfType("SE", [&seDisplayCount](const JVData::Record &record)
+										{
+				if (seDisplayCount < 3) { // 3件だけ表示
+					std::cout << "\n--- SEレコード " << (seDisplayCount + 1) << " ---" << std::endl;
+					record.display();
+					seDisplayCount++;
+				} });
+
+			// 各レコードタイプの統計情報の表示例
+			std::cout << "\n===== RAレコードの距離情報 =====" << std::endl;
+			std::unordered_map<int, int> distanceCounts;
+			recordManager.forEachOfType("RA", [&distanceCounts](const JVData::Record &record)
+										{
+				// RAレコードにダウンキャストして距離情報を取得
+				const auto& raRecord = dynamic_cast<const JVData::RARecord&>(record);
+				int distance = raRecord.getKyori();
+				distanceCounts[distance]++; });
+
+			// 距離ごとのレース数を表示
+			for (const auto &[distance, count] : distanceCounts)
+			{
+				std::cout << distance << "m: " << count << " レース" << std::endl;
+			}
 
 			return 0;
 		}

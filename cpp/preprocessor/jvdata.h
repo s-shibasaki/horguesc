@@ -7,6 +7,7 @@
 #include <memory>
 #include <iomanip>
 #include <unordered_map>
+#include <functional>
 
 namespace JVData
 {
@@ -196,6 +197,25 @@ namespace JVData
         const auto &getDataType() const { return *dataType; } // Return a reference to DataType
         const auto &getCreationDate() const { return creationDate; }
         virtual std::string_view getKey() { return key; }
+
+        // レコードの基本情報を文字列として返す
+        virtual std::string toString() const
+        {
+            std::stringstream ss;
+            ss << "レコード種別: " << recordType.getName() << " (" << recordType.getValue() << ")\n"
+               << "データ区分: " << dataType->getName() << " (" << dataType->getValue() << ")\n"
+               << "作成日: " << std::setw(4) << static_cast<int>(creationDate.year()) << "/"
+               << std::setw(2) << std::setfill('0') << static_cast<unsigned>(creationDate.month()) << "/"
+               << std::setw(2) << static_cast<unsigned>(creationDate.day()) << std::setfill(' ') << "\n"
+               << "キー: " << key;
+            return ss.str();
+        }
+
+        // 基本的な情報を表示する
+        virtual void display() const
+        {
+            std::cout << toString() << std::endl;
+        }
     };
 
     class RARecord : public Record
@@ -264,6 +284,28 @@ namespace JVData
         const auto &getKaisaiNichime() const { return kaisaiNichime; }
         const auto &getKyosoBango() const { return kyosoBango; }
         const auto &getKyori() const { return kyori; } // Get the distance
+
+        // RAレコードの情報を文字列として返す
+        std::string toString() const override
+        {
+            std::stringstream ss;
+            ss << Record::toString() << "\n"
+               << "開催日: " << std::setw(4) << static_cast<int>(kaisaiDate.year()) << "/"
+               << std::setw(2) << std::setfill('0') << static_cast<unsigned>(kaisaiDate.month()) << "/"
+               << std::setw(2) << static_cast<unsigned>(kaisaiDate.day()) << std::setfill(' ') << "\n"
+               << "競馬場: " << keibajoCode.getName() << " (" << keibajoCode.getValue() << ")\n"
+               << "開催回数: " << static_cast<int>(kaisaiKai) << "\n"
+               << "開催日目: " << static_cast<int>(kaisaiNichime) << "\n"
+               << "競走番号: " << static_cast<int>(kyosoBango) << "\n"
+               << "距離: " << kyori << "m";
+            return ss.str();
+        }
+
+        // レース情報を表示する
+        void display() const override
+        {
+            std::cout << toString() << std::endl;
+        }
     };
 
     class SERecord : public Record
@@ -311,6 +353,33 @@ namespace JVData
         const auto &getBarei() const { return barei; }
         float getFutanJuryo() const { return futanJuryo / 10.0f; }
         const auto &getBlinker() const { return blinker; }
+
+        // SEレコードの情報を文字列として返す
+        std::string toString() const override
+        {
+            std::stringstream ss;
+            ss << Record::toString() << "\n"
+               << "開催日: " << std::setw(4) << static_cast<int>(kaisaiDate.year()) << "/"
+               << std::setw(2) << std::setfill('0') << static_cast<unsigned>(kaisaiDate.month()) << "/"
+               << std::setw(2) << static_cast<unsigned>(kaisaiDate.day()) << std::setfill(' ') << "\n"
+               << "競馬場: " << keibajoCode.getName() << " (" << keibajoCode.getValue() << ")\n"
+               << "開催回数: " << static_cast<int>(kaisaiKai) << "\n"
+               << "開催日目: " << static_cast<int>(kaisaiNichime) << "\n"
+               << "競走番号: " << static_cast<int>(kyosoBango) << "\n"
+               << "枠番: " << static_cast<int>(wakuBango) << "\n"
+               << "馬番: " << static_cast<int>(umaBango) << "\n"
+               << "血統登録番号: " << kettoTorokuBango << "\n"
+               << "馬齢: " << static_cast<int>(barei) << "\n"
+               << "負担重量: " << getFutanJuryo() << "kg\n"
+               << "ブリンカー: " << (blinker ? "あり" : "なし");
+            return ss.str();
+        }
+
+        // 出走馬情報を表示する
+        void display() const override
+        {
+            std::cout << toString() << std::endl;
+        }
     };
 
     // Factory class for creating Record objects based on record type
@@ -354,16 +423,28 @@ namespace JVData
 
         std::unordered_map<CompositeKey, std::unique_ptr<Record>, CompositeKeyHash> records;
 
+        // Statistics counters
+        size_t added_count = 0;   // New records added
+        size_t updated_count = 0; // Records updated
+        size_t skipped_count = 0; // Records skipped (older versions)
+        size_t error_count = 0;   // Records with errors
+
     public:
         bool
         addOrUpdateRecord(std::unique_ptr<Record> record)
         {
             if (!record)
+            {
+                error_count++;
                 return false; // Invalid record
+            }
 
             std::string_view key = record->getKey();
             if (key.empty())
+            {
+                error_count++;
                 return false; // Invalid key
+            }
 
             // Create composite key with record type and key
             std::string recordTypeStr = std::string(record->getRecordType().getValue());
@@ -379,12 +460,66 @@ namespace JVData
 
                 // Only update if the new record has a newer or equal date
                 if (newDate < existingDate)
-                    return false; // Don't update with older data
+                {
+                    skipped_count++; // Track skipped updates
+                    return false;    // Don't update with older data
+                }
+
+                // Update existing record
+                records[compositeKey] = std::move(record);
+                updated_count++;
+                return true;
             }
 
-            // Add or update the record
+            // Add new record
             records[compositeKey] = std::move(record);
+            added_count++;
             return true;
         }
+
+        // Get statistics methods
+        size_t getAddedCount() const { return added_count; }
+        size_t getUpdatedCount() const { return updated_count; }
+        size_t getSkippedCount() const { return skipped_count; }
+        size_t getErrorCount() const { return error_count; }
+
+        // Reset statistics
+        void resetStatistics()
+        {
+            added_count = 0;
+            updated_count = 0;
+            skipped_count = 0;
+            error_count = 0;
+        }
+
+        const std::unordered_map<CompositeKey, std::unique_ptr<Record>, CompositeKeyHash> &getRecords() const
+        {
+            return records;
+        }
+
+        const Record *getRecord(const std::string &recordType, const std::string &key) const
+        {
+            return records.at({recordType, key}).get();
+        }
+
+        void forEach(const std::function<void(const Record &)> &callback) const
+        {
+            for (const auto &[key, record] : records)
+            {
+                if (record)
+                    callback(*record);
+            }
+        }
+
+        void forEachOfType(const std::string &recordType, const std::function<void(const Record &)> &callback) const
+        {
+            for (const auto &[key, record] : records)
+            {
+                if (record && key.first == recordType)
+                    callback(*record);
+            }
+        }
+
+        size_t size() const { return records.size(); }
     };
 }

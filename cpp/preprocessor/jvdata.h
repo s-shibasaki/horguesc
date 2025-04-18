@@ -34,12 +34,9 @@ namespace JVData
         }
 
         // Overload the operator== for comparison
-        bool operator==(const Code &other) const { return getValue == other.getValue(); }
-        bool operator!=(const Code &other) const { return getValue != other.getValue(); }
+        bool operator==(const Code &other) const { return getValue() == other.getValue(); }
         bool operator==(const std::string &str) const { return getValue() == str; }
-        bool operator!=(const std::string &str) const { return getValue() != str; }
         friend bool operator==(const std::string &str, const Code &code) { return str == code.getValue(); }
-        friend bool operator!=(const std::string &str, const Code &code) { return str != code.getValue(); }
 
         // Overload the operator<< for output
         friend std::ostream &operator<<(std::ostream &os, const Code &code) { return os << code.getValue(); }
@@ -182,22 +179,33 @@ namespace JVData
         }
     };
 
+    class Key
+    {
+    public:
+        Key() {}
+        virtual ~Key() = default;
+        virtual std::string toString() const { return ""; }               // Default implementation returns an empty string;
+        virtual bool operator==(const Key &other) const { return false; } // Default implementation returns false
+    };
+
     // Record class with nested DataType implementation
     class Record
     {
     private:
         const RecordType recordType;                      // レコード種別ID
-        const std::unique_ptr<JVData::DataType> dataType; // データ区分 - constを追加
+        const std::unique_ptr<JVData::DataType> dataType; // データ区分
         const std::chrono::year_month_day creationDate;   // データ作成年月日
+        const std::unique_ptr<JVData::Key> key;           // レコードのキー
 
     public:
         // Constructor for Record - 派生クラスがdataTypeを指定できるようにする
-        Record(const std::string &data, std::unique_ptr<JVData::DataType> dataType = nullptr)
+        Record(const std::string &data, std::unique_ptr<JVData::DataType> dataType = nullptr, std::unique_ptr<JVData::Key> key = nullptr)
             : recordType(data.substr(0, 2)),
               dataType(dataType ? std::move(dataType) : std::make_unique<DataType>(data.substr(2, 1))),
               creationDate(std::chrono::year(std::stoi(data.substr(3, 4))),
                            std::chrono::month(std::stoi(data.substr(7, 2))),
-                           std::chrono::day(std::stoi(data.substr(9, 2)))) {}
+                           std::chrono::day(std::stoi(data.substr(9, 2)))),
+              key(key ? std::move(key) : std::make_unique<Key>()) {}
 
         // Destructor
         virtual ~Record() = default; // Virtual destructor for proper cleanup of derived classes
@@ -206,6 +214,7 @@ namespace JVData
         const auto &getRecordType() const { return recordType; }
         const auto &getDataType() const { return *dataType; } // Return a reference to DataType
         const auto &getCreationDate() const { return creationDate; }
+        const auto &getKey() const { return *key; } // Return a reference to Key
     };
 
     class RARecord : public Record
@@ -246,6 +255,39 @@ namespace JVData
             }
         };
 
+        class Key : public JVData::Key
+        {
+        private:
+            const RARecord &record; // Reference to the RARecord instance
+
+        public:
+            Key(const RARecord &record) : record(record) {}
+
+            std::string toString() const override
+            {
+                std::stringstream ss;
+                ss << std::setfill('0') << std::setw(2) << static_cast<int>(record.kaisaiDate.year())
+                   << std::setfill('0') << std::setw(2) << static_cast<unsigned>(record.kaisaiDate.month())
+                   << std::setfill('0') << std::setw(2) << static_cast<unsigned>(record.kaisaiDate.day())
+                   << record.keibajoCode.getValue()
+                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.kaisaiKai)
+                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.kaisaiNichime)
+                   << std::setfill('0') << std::setw(2) << static_cast<int>(record.kyosoBango);
+                return ss.str();
+            }
+
+            bool operator==(const Key &other) const
+            {
+                return record.kaisaiDate.year() == other.record.kaisaiDate.year() &&
+                       record.kaisaiDate.month() == other.record.kaisaiDate.month() &&
+                       record.kaisaiDate.day() == other.record.kaisaiDate.day() &&
+                       record.keibajoCode == other.record.keibajoCode &&
+                       record.kaisaiKai == other.record.kaisaiKai &&
+                       record.kaisaiNichime == other.record.kaisaiNichime &&
+                       record.kyosoBango == other.record.kyosoBango;
+            }
+        };
+
     private:
         const std::chrono::year_month_day kaisaiDate;
         const KeibajoCode keibajoCode;
@@ -257,7 +299,7 @@ namespace JVData
     public:
         // Constructor
         RARecord(const std::string &data)
-            : Record(data, std::make_unique<DataType>(data.substr(2, 1))),
+            : Record(data, std::make_unique<DataType>(data.substr(2, 1)), std::make_unique<Key>(*this)),
               kaisaiDate(std::chrono::year(std::stoi(data.substr(11, 4))),
                          std::chrono::month(std::stoi(data.substr(15, 2))),
                          std::chrono::day(std::stoi(data.substr(17, 2)))),
@@ -278,9 +320,6 @@ namespace JVData
 
     class SERecord : public Record
     {
-    public:
-        using DataType = RARecord::DataType; // Use RARecord's DataType for SERecord
-
     private:
         const std::chrono::year_month_day kaisaiDate;
         const KeibajoCode keibajoCode;
@@ -297,7 +336,7 @@ namespace JVData
     public:
         // Constructor
         SERecord(const std::string &data)
-            : Record(data, std::make_unique<DataType>(data.substr(2, 1))),
+            : Record(data, std::make_unique<RARecord::DataType>(data.substr(2, 1))),
               kaisaiDate(std::chrono::year(std::stoi(data.substr(11, 4))),
                          std::chrono::month(std::stoi(data.substr(15, 2))),
                          std::chrono::day(std::stoi(data.substr(17, 2)))),

@@ -22,6 +22,16 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
+	else if (arg1 == "testkey")
+	{
+		auto key1 = JVData::Key();
+		auto key2 = JVData::Key();
+		std::cout << "key1: " << key1.toString() << std::endl;
+		std::cout << "key2: " << key2.toString() << std::endl;
+		std::cout << "key1 == key2: " << (key1 == key2) << std::endl;
+		std::cout << "key1 != key2: " << (key1 != key2) << std::endl;
+	}
+
 	else if (arg1 == "testinteger")
 	{
 		std::cout << "整数型の情報：" << std::endl;
@@ -211,6 +221,20 @@ int main(int argc, char *argv[])
 				std::cout << "Record " << (i + 1) << ": " << records[i]->getRecordType().getName() << std::endl;
 				std::cout << "Creation date: " << records[i]->getCreationDate() << std::endl;
 				std::cout << "Data type: " << records[i]->getDataType().getName() << std::endl;
+
+				// Key情報の表示を追加
+				std::cout << "Key: " << records[i]->getKey().toString() << std::endl;
+
+				// 同一レコード種別の比較を行い、キーの一致確認を行う (1つ前のレコードと比較)
+				if (i > startIndex)
+				{
+					if (records[i]->getRecordType() == records[i - 1]->getRecordType())
+					{
+						std::cout << "Key comparison with previous record: "
+								  << (records[i]->getKey() == records[i - 1]->getKey() ? "Same" : "Different")
+								  << std::endl;
+					}
+				}
 
 				if (records[i]->getRecordType() == "RA")
 				{

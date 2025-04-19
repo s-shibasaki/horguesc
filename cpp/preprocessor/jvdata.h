@@ -398,8 +398,7 @@ namespace JVData
                 return std::make_unique<RARecord>(data);
             else if (recordType == "SE")
                 return std::make_unique<SERecord>(data);
-            else
-                return std::make_unique<Record>(data); // Default to base class if type is unknown
+            return std::make_unique<Record>(data); // Default to base class if type is unknown
         }
     };
 
@@ -417,7 +416,8 @@ namespace JVData
         {
             std::size_t operator()(const CompositeKey &key) const
             {
-                return std::hash<std::string>{}(key.first) ^ std::hash<std::string_view>{}(key.second);
+                return std::hash<std::string>{}(key.first) ^
+                       std::hash<std::string_view>{}(key.second);
             }
         };
 
@@ -430,8 +430,8 @@ namespace JVData
         size_t error_count = 0;   // Records with errors
 
     public:
-        bool
-        addOrUpdateRecord(std::unique_ptr<Record> record)
+        // Add or update a record in the manager
+        bool addOrUpdateRecord(std::unique_ptr<Record> record)
         {
             if (!record)
             {
@@ -477,8 +477,92 @@ namespace JVData
             return true;
         }
 
+        // Get methods for accessing records
+        const std::unordered_map<CompositeKey, std::unique_ptr<Record>, CompositeKeyHash> &getRecords() const { return records; }
+        const Record *getRecord(const std::string &recordType, const std::string &key) const { return records.at({recordType, key}).get(); }
+
+        // Get the number of records
+        size_t size() const { return records.size(); }
+
+        // For each method to iterate over records
+        void forEach(const std::function<void(const Record &)> &callback) const
+        {
+            for (const auto &[key, record] : records)
+                if (record)
+                    callback(*record);
+        }
+
+        // For each method to iterate over records of a specific type
+        void forEachOfType(const std::string &recordType, const std::function<void(const Record &)> &callback) const
+        {
+            for (const auto &[key, record] : records)
+                if (record && key.first == recordType)
+                    callback(*record);
+        }
+
+        // Generic search method that takes a predicate function
+        template <typename T>
+        std::vector<const T *> findRecords(const std::function<bool(const T &)> &predicate) const
+        {
+            std::vector<const T *> results;
+            forEach([&](const Record &record)
+                    {
+                const auto* castRecord = dynamic_cast<const T*>(&record);
+                if (castRecord && predicate(*castRecord)) {
+                    results.push_back(castRecord);
+                } });
+            return results;
+        }
+
+        std::vector<const RARecord *> findRARecords(
+            std::optional<std::pair<std::chrono::year_month_day, std::chrono::year_month_day>> kaisaiDateRange = std::nullopt,
+            std::optional<std::string> keibajoCode = std::nullopt,
+            std::optional<uint8_t> kyosoBango = std::nullopt) const
+        {
+            return findRecords<RARecord>([&](const RARecord &record)
+                                         {
+                if (kaisaiDateRange) {
+                    const auto& [startDate, endDate] = *kaisaiDateRange;
+                    if (record.getKaisaiDate() < startDate || record.getKaisaiDate() > endDate)
+                        return false;
+                }
+                if (keibajoCode && record.getKeibajoCode() != *keibajoCode)
+                    return false;
+                if (kyosoBango && record.getKyosoBango() != *kyosoBango)
+                    return false;
+                return true; });
+        }
+
+        std::vector<const SERecord *> findSERecords(
+            std::optional<std::pair<std::chrono::year_month_day, std::chrono::year_month_day>> kaisaiDateRange = std::nullopt,
+            std::optional<std::string> keibajoCode = std::nullopt,
+            std::optional<uint8_t> kyosoBango = std::nullopt,
+            std::optional<uint8_t> umaBango = std::nullopt,
+            std::optional<uint8_t> kettoTorokuBango = std::nullopt) const
+        {
+            return findRecords<SERecord>([&](const SERecord &record)
+                                         {
+                if (kaisaiDateRange) {
+                    const auto& [startDate, endDate] = *kaisaiDateRange;
+                    if (record.getKaisaiDate() < startDate || record.getKaisaiDate() > endDate)
+                        return false;
+                }
+                if (keibajoCode && record.getKeibajoCode() != *keibajoCode)
+                    return false;
+                if (kyosoBango && record.getKyosoBango() != *kyosoBango)
+                    return false;
+                if (umaBango && record.getUmaBango() != *umaBango)
+                    return false;
+                if (kettoTorokuBango && record.getKettoTorokuBango() != *kettoTorokuBango)
+                    return false;
+                return true; });
+        };
+
         // Get statistics methods
-        size_t getAddedCount() const { return added_count; }
+        size_t getAddedCount() const
+        {
+            return added_count;
+        }
         size_t getUpdatedCount() const { return updated_count; }
         size_t getSkippedCount() const { return skipped_count; }
         size_t getErrorCount() const { return error_count; }
@@ -491,35 +575,5 @@ namespace JVData
             skipped_count = 0;
             error_count = 0;
         }
-
-        const std::unordered_map<CompositeKey, std::unique_ptr<Record>, CompositeKeyHash> &getRecords() const
-        {
-            return records;
-        }
-
-        const Record *getRecord(const std::string &recordType, const std::string &key) const
-        {
-            return records.at({recordType, key}).get();
-        }
-
-        void forEach(const std::function<void(const Record &)> &callback) const
-        {
-            for (const auto &[key, record] : records)
-            {
-                if (record)
-                    callback(*record);
-            }
-        }
-
-        void forEachOfType(const std::string &recordType, const std::function<void(const Record &)> &callback) const
-        {
-            for (const auto &[key, record] : records)
-            {
-                if (record && key.first == recordType)
-                    callback(*record);
-            }
-        }
-
-        size_t size() const { return records.size(); }
     };
 }

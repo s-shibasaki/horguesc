@@ -3,6 +3,7 @@
 #include <limits>
 #include <iomanip> // std::setprecision のために追加
 #include "jvdata.h"
+#include <algorithm>
 
 using namespace std::literals;
 
@@ -20,16 +21,6 @@ int main(int argc, char *argv[])
 	{
 		std::cout << "Hello, World!" << std::endl;
 		return 0;
-	}
-
-	else if (arg1 == "testkey")
-	{
-		// auto key1 = JVData::Key();
-		// auto key2 = JVData::Key();
-		// std::cout << "key1: " << key1.toString() << std::endl;
-		// std::cout << "key2: " << key2.toString() << std::endl;
-		// std::cout << "key1 == key2: " << (key1 == key2) << std::endl;
-		// std::cout << "key1 != key2: " << (key1 != key2) << std::endl;
 	}
 
 	else if (arg1 == "testinteger")
@@ -193,98 +184,119 @@ int main(int argc, char *argv[])
 
 			// initialize record manager
 			JVData::RecordManager recordManager;
+
 			int processedCount = 0;
 			int storedCount = 0;
 
-			// read the file line by line
 			std::string line;
 			while (std::getline(file, line))
 			{
-				try
+				std::unique_ptr<JVData::Record> record = JVData::RecordFactory::createRecord(line);
+				if (record != nullptr)
 				{
-					std::unique_ptr<JVData::Record> record = JVData::RecordFactory::createRecord(line);
-					if (record != nullptr)
-					{
-						processedCount++;
-						// Try to add the record to the manager
-						if (recordManager.addOrUpdateRecord(std::move(record)))
-						{
-							storedCount++;
-						}
-					}
-				}
-				catch (const std::exception &e)
-				{
-					std::cerr << "Error processing line: " << e.what() << std::endl;
-					continue; // skip to the next line on error
+					processedCount++;
+					// Try to add the record to the manager
+					if (recordManager.addOrUpdateRecord(std::move(record)))
+						storedCount++;
 				}
 			}
+
+			std::cout << "Processed " << processedCount << " records." << std::endl;
+			std::cout << "Stored " << storedCount << " records." << std::endl;
+
 			file.close();
-			std::cout << "Total records processed: " << processedCount << std::endl;
-			std::cout << "Records stored in manager: " << storedCount << std::endl;
 
-			// Display statistics
-			std::cout << "\n===== レコード処理統計 =====" << std::endl;
-			std::cout << "総処理レコード数: " << processedCount << " 件" << std::endl;
-			std::cout << "新規追加レコード: " << recordManager.getAddedCount() << " 件" << std::endl;
-			std::cout << "更新されたレコード: " << recordManager.getUpdatedCount() << " 件" << std::endl;
-			std::cout << "スキップされたレコード (古いデータ): " << recordManager.getSkippedCount() << " 件" << std::endl;
-			std::cout << "エラーレコード: " << recordManager.getErrorCount() << " 件" << std::endl;
-			std::cout << "格納レコード総数: " << recordManager.size() << " 件" << std::endl;
+			// Add RecordManager functionality test
+			std::cout << "\n=== RecordManager 機能テスト ===" << std::endl;
+			std::cout << "合計レコード数: " << recordManager.size() << std::endl;
 
-			// レコードマネージャーの内容を表示するセクション
-			std::cout << "\n===== レコード管理システム情報 =====" << std::endl;
-			std::cout << "格納レコード総数: " << recordManager.size() << " 件" << std::endl;
+			// レコードタイプごとの統計を表示
+			std::cout << "\n【レコードタイプ別集計】" << std::endl;
+			std::unordered_map<std::string, int> recordTypeCounts;
+			recordManager.forEach([&](const JVData::Record &record)
+								  {
+				std::string type = std::string(record.getRecordType().getValue());
+				recordTypeCounts[type]++; });
 
-			// レコードタイプ別のカウント
-			std::unordered_map<std::string, int> typeCounts;
-			recordManager.forEach([&typeCounts](const JVData::Record &record)
-								  { std::string typeStr(record.getRecordType().getValue());
-									typeCounts[typeStr]++; });
-
-			// レコードタイプ別の件数を表示
-			std::cout << "\n===== レコードタイプ別集計 =====" << std::endl;
-			for (const auto &[type, count] : typeCounts)
+			for (const auto &[type, count] : recordTypeCounts)
 			{
-				std::cout << type << ": " << count << " 件" << std::endl;
+				std::cout << type << ": " << count << " レコード" << std::endl;
 			}
 
-			// レースデータ（RAレコード）のサンプル表示
-			std::cout << "\n===== レースデータ(RA)のサンプル =====" << std::endl;
-			int raDisplayCount = 0;
-			recordManager.forEachOfType("RA", [&raDisplayCount](const JVData::Record &record)
-										{
-				if (raDisplayCount < 3) { // 3件だけ表示
-					std::cout << "\n--- RAレコード " << (raDisplayCount + 1) << " ---" << std::endl;
-					record.display();
-					raDisplayCount++;
-				} });
+			// RAレコードの検索テスト
+			std::cout << "\n【RAレコード検索テスト】" << std::endl;
+			auto raRecords = recordManager.findRARecords();
+			std::cout << "RAレコード数: " << raRecords.size() << std::endl;
 
-			// 出走馬データ（SEレコード）のサンプル表示
-			std::cout << "\n===== 出走馬データ(SE)のサンプル =====" << std::endl;
-			int seDisplayCount = 0;
-			recordManager.forEachOfType("SE", [&seDisplayCount](const JVData::Record &record)
-										{
-				if (seDisplayCount < 3) { // 3件だけ表示
-					std::cout << "\n--- SEレコード " << (seDisplayCount + 1) << " ---" << std::endl;
-					record.display();
-					seDisplayCount++;
-				} });
-
-			// 各レコードタイプの統計情報の表示例
-			std::cout << "\n===== RAレコードの距離情報 =====" << std::endl;
-			std::unordered_map<int, int> distanceCounts;
-			recordManager.forEachOfType("RA", [&distanceCounts](const JVData::Record &record)
-										{
-				// RAレコードにダウンキャストして距離情報を取得
-				const auto& raRecord = dynamic_cast<const JVData::RARecord&>(record);
-				int distance = raRecord.getKyori();
-				distanceCounts[distance]++; });
-
-			// 距離ごとのレース数を表示
-			for (const auto &[distance, count] : distanceCounts)
+			if (!raRecords.empty())
 			{
-				std::cout << distance << "m: " << count << " レース" << std::endl;
+				std::cout << "\n最初のRAレコードの詳細:" << std::endl;
+				raRecords[0]->display();
+
+				// 競馬場コードで検索
+				std::string testKeibajo = "05"; // 東京競馬場
+				auto tokyoRecords = recordManager.findRARecords(std::nullopt, testKeibajo);
+				std::cout << "\n東京競馬場 (" << testKeibajo << ") のレース数: "
+						  << tokyoRecords.size() << std::endl;
+			}
+
+			// SEレコードの検索テスト
+			std::cout << "\n【SEレコード検索テスト】" << std::endl;
+			auto seRecords = recordManager.findSERecords();
+			std::cout << "SEレコード数: " << seRecords.size() << std::endl;
+
+			if (!seRecords.empty())
+			{
+				std::cout << "\n最初のSEレコードの詳細:" << std::endl;
+				seRecords[0]->display();
+
+				// 1番人気の馬を探す
+				std::cout << "\n特定の馬番(1番)の出走馬検索:" << std::endl;
+				uint8_t testUmaBango = 1;
+				auto uma1Records = recordManager.findSERecords(std::nullopt, std::nullopt, std::nullopt, testUmaBango);
+				std::cout << "1番馬の出走回数: " << uma1Records.size() << std::endl;
+
+				if (!uma1Records.empty())
+				{
+					std::cout << "例:" << std::endl;
+					uma1Records[0]->display();
+				}
+			}
+
+			// 血統登録番号に関する統計
+			std::cout << "\n【血統登録番号統計】" << std::endl;
+			std::unordered_map<uint64_t, int> kettoCount;
+
+			// 血統登録番号ごとの出走回数をカウント
+			recordManager.forEachOfType("SE", [&](const JVData::Record &record)
+										{
+                const auto* seRecord = dynamic_cast<const JVData::SERecord*>(&record);
+                if (seRecord) {
+                    kettoCount[seRecord->getKettoTorokuBango()]++;
+                } });
+
+			// ユニークな血統登録番号の数を表示
+			std::cout << "ユニークな血統登録番号数: " << kettoCount.size() << std::endl;
+
+			// 出走回数順にソートするため、vectorに変換
+			std::vector<std::pair<uint64_t, int>> sortedKetto(kettoCount.begin(), kettoCount.end());
+			std::sort(sortedKetto.begin(), sortedKetto.end(),
+					  [](const auto &a, const auto &b)
+					  { return a.second > b.second; });
+
+			// トップ10の馬を表示
+			std::cout << "\n【出走回数トップ10馬】" << std::endl;
+			std::cout << "順位  血統登録番号  出走回数" << std::endl;
+			std::cout << "----------------------------" << std::endl;
+
+			int rank = 1;
+			for (auto it = sortedKetto.begin();
+				 it != sortedKetto.end() && rank <= 10;
+				 ++it, ++rank)
+			{
+				std::cout << std::setw(4) << rank << "  "
+						  << std::setw(12) << it->first << "  "
+						  << std::setw(6) << it->second << "回" << std::endl;
 			}
 
 			return 0;

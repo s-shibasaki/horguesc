@@ -170,6 +170,79 @@ namespace JVData
         }
     };
 
+    class TrackCode : public Code<2>
+    {
+    public:
+        using Code<2>::Code;
+
+        std::string getName() const override
+        {
+            const std::string_view code = getValue();
+
+            if (code == "00")
+                return "なし";
+            if (code == "10")
+                return "平地・芝・直線";
+            if (code == "11")
+                return "平地・芝・左回り";
+            if (code == "12")
+                return "平地・芝・左回り・外回り";
+            if (code == "13")
+                return "平地・芝・左回り・内－外回り";
+            if (code == "14")
+                return "平地・芝・左回り・外－内回り";
+            if (code == "15")
+                return "平地・芝・左回り・内２周";
+            if (code == "16")
+                return "平地・芝・左回り・外２周";
+            if (code == "17")
+                return "平地・芝・右回り";
+            if (code == "18")
+                return "平地・芝・右回り・外回り";
+            if (code == "19")
+                return "平地・芝・右回り・内－外回り";
+            if (code == "20")
+                return "平地・芝・右回り・外－内回り";
+            if (code == "21")
+                return "平地・芝・右回り・内２周";
+            if (code == "22")
+                return "平地・芝・右回り・外２周";
+            if (code == "23")
+                return "平地・ダート・左回り";
+            if (code == "24")
+                return "平地・ダート・右回り";
+            if (code == "25")
+                return "平地・ダート・左回り・内回り";
+            if (code == "26")
+                return "平地・ダート・右回り・外回り";
+            if (code == "27")
+                return "平地・サンド・左回り";
+            if (code == "28")
+                return "平地・サンド・右回り";
+            if (code == "29")
+                return "平地・ダート・直線";
+            if (code == "51")
+                return "障害・芝・襷";
+            if (code == "52")
+                return "障害・芝・ダート";
+            if (code == "53")
+                return "障害・芝・左";
+            if (code == "54")
+                return "障害・芝";
+            if (code == "55")
+                return "障害・芝・外回り";
+            if (code == "56")
+                return "障害・芝・外－内回り";
+            if (code == "57")
+                return "障害・芝・内－外回り";
+            if (code == "58")
+                return "障害・芝・内２周以上";
+            if (code == "59")
+                return "障害・芝・外２周以上";
+            return "不明";
+        }
+    };
+
     // Record class with nested DataType implementation
     class Record
     {
@@ -263,6 +336,7 @@ namespace JVData
         const uint8_t kaisaiNichime;
         const uint8_t kyosoBango;
         const uint16_t kyori;
+        const TrackCode trackCode;
 
     public:
         // Constructor
@@ -275,7 +349,8 @@ namespace JVData
               kaisaiKai(std::stoi(data.substr(21, 2))),
               kaisaiNichime(std::stoi(data.substr(23, 2))),
               kyosoBango(std::stoi(data.substr(25, 2))),
-              kyori(std::stoi(data.substr(697, 4))) {}
+              kyori(std::stoi(data.substr(697, 4))),
+              trackCode(data.substr(705, 2)) {}
 
         // Getters for RA-specific properties
         const auto &getKaisaiDate() const { return kaisaiDate; }
@@ -284,6 +359,7 @@ namespace JVData
         const auto &getKaisaiNichime() const { return kaisaiNichime; }
         const auto &getKyosoBango() const { return kyosoBango; }
         const auto &getKyori() const { return kyori; } // Get the distance
+        const auto &getTrackCode() const { return trackCode; }
 
         // RAレコードの情報を文字列として返す
         std::string toString() const override
@@ -297,7 +373,8 @@ namespace JVData
                << "開催回数: " << static_cast<int>(kaisaiKai) << "\n"
                << "開催日目: " << static_cast<int>(kaisaiNichime) << "\n"
                << "競走番号: " << static_cast<int>(kyosoBango) << "\n"
-               << "距離: " << kyori << "m";
+               << "距離: " << kyori << "m\n"
+               << "コース: " << trackCode.getName() << " (" << trackCode.getValue() << ")\n";
             return ss.str();
         }
 
@@ -515,12 +592,18 @@ namespace JVData
         }
 
         std::vector<const RARecord *> findRARecords(
+            std::optional<std::chrono::year_month_day> kaisaiDate = std::nullopt,
             std::optional<std::pair<std::chrono::year_month_day, std::chrono::year_month_day>> kaisaiDateRange = std::nullopt,
-            std::optional<std::string> keibajoCode = std::nullopt,
-            std::optional<uint8_t> kyosoBango = std::nullopt) const
+            std::optional<KeibajoCode> keibajoCode = std::nullopt,
+            std::optional<uint8_t> kyosoBango = std::nullopt,
+            std::optional<uint16_t> kyori = std::nullopt,
+            std::optional<std::pair<uint16_t, uint16_t>> kyoriRange = std::nullopt,
+            std::optional<TrackCode> trackCode = std::nullopt) const
         {
             return findRecords<RARecord>([&](const RARecord &record)
                                          {
+                if (kaisaiDate && record.getKaisaiDate() != *kaisaiDate)
+                    return false;
                 if (kaisaiDateRange) {
                     const auto& [startDate, endDate] = *kaisaiDateRange;
                     if (record.getKaisaiDate() < startDate || record.getKaisaiDate() > endDate)
@@ -530,18 +613,30 @@ namespace JVData
                     return false;
                 if (kyosoBango && record.getKyosoBango() != *kyosoBango)
                     return false;
+                if (kyori && record.getKyori() != *kyori)
+                    return false;
+                if (kyoriRange) {
+                    const auto& [startKyori, endKyori] = *kyoriRange;
+                    if (record.getKyori() < startKyori || record.getKyori() > endKyori)
+                        return false;
+                }
+                if (trackCode && record.getTrackCode() != *trackCode)
+                    return false;
                 return true; });
         }
 
         std::vector<const SERecord *> findSERecords(
+            std::optional<std::chrono::year_month_day> kaisaiDate = std::nullopt,
             std::optional<std::pair<std::chrono::year_month_day, std::chrono::year_month_day>> kaisaiDateRange = std::nullopt,
-            std::optional<std::string> keibajoCode = std::nullopt,
+            std::optional<KeibajoCode> keibajoCode = std::nullopt,
             std::optional<uint8_t> kyosoBango = std::nullopt,
             std::optional<uint8_t> umaBango = std::nullopt,
             std::optional<uint8_t> kettoTorokuBango = std::nullopt) const
         {
             return findRecords<SERecord>([&](const SERecord &record)
                                          {
+                if (kaisaiDate && record.getKaisaiDate() != *kaisaiDate)
+                    return false;
                 if (kaisaiDateRange) {
                     const auto& [startDate, endDate] = *kaisaiDateRange;
                     if (record.getKaisaiDate() < startDate || record.getKaisaiDate() > endDate)

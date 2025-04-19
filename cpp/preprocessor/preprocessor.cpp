@@ -4,6 +4,8 @@
 #include <iomanip> // std::setprecision のために追加
 #include "jvdata.h"
 #include <algorithm>
+#include <set>
+#include <map>
 
 using namespace std::literals;
 
@@ -235,9 +237,26 @@ int main(int argc, char *argv[])
 
 				// 競馬場コードで検索
 				std::string testKeibajo = "05"; // 東京競馬場
-				auto tokyoRecords = recordManager.findRARecords(std::nullopt, testKeibajo);
+				auto tokyoRecords = recordManager.findRARecords(std::nullopt, std::nullopt, testKeibajo);
 				std::cout << "\n東京競馬場 (" << testKeibajo << ") のレース数: "
 						  << tokyoRecords.size() << std::endl;
+
+				// TrackCodeで検索
+				std::string testTrackCode = "11"; // 平地・芝・左回り
+				auto leftTurfRecords = recordManager.findRARecords(std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, testTrackCode);
+				std::cout << "\n平地・芝・左回り (" << testTrackCode << ") のレース数: "
+						  << leftTurfRecords.size() << std::endl;
+
+				// 東京芝左回りのレース
+				auto tokyoLeftTurfRecords = recordManager.findRARecords(std::nullopt, std::nullopt, testKeibajo, std::nullopt, std::nullopt, std::nullopt, testTrackCode);
+				std::cout << "\n東京芝左回り のレース数: " << tokyoLeftTurfRecords.size() << std::endl;
+
+				// 例を表示
+				if (!leftTurfRecords.empty())
+				{
+					std::cout << "\n平地・芝・左回りのレース例:" << std::endl;
+					leftTurfRecords[0]->display();
+				}
 			}
 
 			// SEレコードの検索テスト
@@ -253,7 +272,7 @@ int main(int argc, char *argv[])
 				// 1番人気の馬を探す
 				std::cout << "\n特定の馬番(1番)の出走馬検索:" << std::endl;
 				uint8_t testUmaBango = 1;
-				auto uma1Records = recordManager.findSERecords(std::nullopt, std::nullopt, std::nullopt, testUmaBango);
+				auto uma1Records = recordManager.findSERecords(std::nullopt, std::nullopt, std::nullopt, std::nullopt, testUmaBango);
 				std::cout << "1番馬の出走回数: " << uma1Records.size() << std::endl;
 
 				if (!uma1Records.empty())
@@ -262,6 +281,58 @@ int main(int argc, char *argv[])
 					uma1Records[0]->display();
 				}
 			}
+
+			// ユニークな競馬場×トラックコード×距離の組み合わせを表示
+			std::cout << "\n【ユニークな競馬場×トラックコード×距離の組み合わせ】" << std::endl;
+
+			// 組み合わせを保存するための構造体とセット
+			struct CourseCombo
+			{
+				std::string keibajo;
+				std::string trackCode;
+				uint16_t kyori;
+
+				bool operator<(const CourseCombo &other) const
+				{
+					if (keibajo != other.keibajo)
+						return keibajo < other.keibajo;
+					if (trackCode != other.trackCode)
+						return trackCode < other.trackCode;
+					return kyori < other.kyori;
+				}
+			};
+
+			// 各組み合わせの出現回数を記録
+			std::map<CourseCombo, int> comboCounts;
+
+			// RAレコードから組み合わせを収集
+			recordManager.forEachOfType("RA", [&](const JVData::Record &record)
+										{
+				const auto* raRecord = dynamic_cast<const JVData::RARecord*>(&record);
+				if (raRecord) {
+					CourseCombo combo = {
+						std::string(raRecord->getKeibajoCode().getValue()),
+						std::string(raRecord->getTrackCode().getValue()),
+						raRecord->getKyori()
+					};
+					comboCounts[combo]++;
+				} });
+
+			// 結果を表示
+			std::cout << "競馬場コード  トラックコード                   距離   件数" << std::endl;
+			std::cout << "------------------------------------------------------------" << std::endl;
+			for (const auto &[combo, count] : comboCounts)
+			{
+				JVData::KeibajoCode keibajoCode(combo.keibajo);
+				JVData::TrackCode trackCode(combo.trackCode);
+				std::cout << std::left
+						  << combo.keibajo << ":" << std::setw(9) << keibajoCode.getName() << "  "
+						  << combo.trackCode << ":" << std::setw(28) << trackCode.getName() << "  "
+						  << std::right
+						  << std::setw(4) << combo.kyori << "m  "
+						  << std::setw(4) << count << "件  " << std::endl;
+			}
+			std::cout << "合計: " << comboCounts.size() << " 組み合わせ" << std::endl;
 
 			// 血統登録番号に関する統計
 			std::cout << "\n【血統登録番号統計】" << std::endl;

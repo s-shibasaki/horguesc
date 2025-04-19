@@ -32,6 +32,31 @@ namespace JVData
         bool operator==(const std::string &str) const { return getValue() == str; }
         friend bool operator==(const std::string &str, const Code &code) { return str == code.getValue(); }
 
+        // Add not equal operator
+        bool operator!=(const Code &other) const { return getValue() != other.getValue(); }
+        bool operator!=(const std::string &str) const { return getValue() != str; }
+        friend bool operator!=(const std::string &str, const Code &code) { return str != code.getValue(); }
+
+        // Add less than operator
+        bool operator<(const Code &other) const { return getValue() < other.getValue(); }
+        bool operator<(const std::string &str) const { return getValue() < str; }
+        friend bool operator<(const std::string &str, const Code &code) { return str < code.getValue(); }
+
+        // Add greater than operator
+        bool operator>(const Code &other) const { return getValue() > other.getValue(); }
+        bool operator>(const std::string &str) const { return getValue() > str; }
+        friend bool operator>(const std::string &str, const Code &code) { return str > code.getValue(); }
+
+        // Add less than or equal operator
+        bool operator<=(const Code &other) const { return getValue() <= other.getValue(); }
+        bool operator<=(const std::string &str) const { return getValue() <= str; }
+        friend bool operator<=(const std::string &str, const Code &code) { return str <= code.getValue(); }
+
+        // Add greater than or equal operator
+        bool operator>=(const Code &other) const { return getValue() >= other.getValue(); }
+        bool operator>=(const std::string &str) const { return getValue() >= str; }
+        friend bool operator>=(const std::string &str, const Code &code) { return str >= code.getValue(); }
+
         // Overload the operator<< for output
         friend std::ostream &operator<<(std::ostream &os, const Code &code) { return os << code.getValue(); }
     };
@@ -285,10 +310,7 @@ namespace JVData
         }
 
         // 基本的な情報を表示する
-        virtual void display() const
-        {
-            std::cout << toString() << std::endl;
-        }
+        virtual void display() const { std::cout << toString() << std::endl; }
     };
 
     class RARecord : public Record
@@ -374,14 +396,8 @@ namespace JVData
                << "開催日目: " << static_cast<int>(kaisaiNichime) << "\n"
                << "競走番号: " << static_cast<int>(kyosoBango) << "\n"
                << "距離: " << kyori << "m\n"
-               << "コース: " << trackCode.getName() << " (" << trackCode.getValue() << ")\n";
+               << "トラック: " << trackCode.getName() << " (" << trackCode.getValue() << ")";
             return ss.str();
-        }
-
-        // レース情報を表示する
-        void display() const override
-        {
-            std::cout << toString() << std::endl;
         }
     };
 
@@ -450,12 +466,6 @@ namespace JVData
                << "負担重量: " << getFutanJuryo() << "kg\n"
                << "ブリンカー: " << (blinker ? "あり" : "なし");
             return ss.str();
-        }
-
-        // 出走馬情報を表示する
-        void display() const override
-        {
-            std::cout << toString() << std::endl;
         }
     };
 
@@ -555,85 +565,103 @@ namespace JVData
         }
 
         // Get methods for accessing records
-        const std::unordered_map<CompositeKey, std::unique_ptr<Record>, CompositeKeyHash> &getRecords() const { return records; }
         const Record *getRecord(const std::string &recordType, const std::string &key) const { return records.at({recordType, key}).get(); }
 
         // Get the number of records
         size_t size() const { return records.size(); }
 
-        // For each method to iterate over records
-        void forEach(const std::function<void(const Record &)> &callback) const
+        // Method to iterate over all records with early termination support
+        void forEach(const std::function<bool(const Record &)> &callback) const
         {
             for (const auto &[key, record] : records)
-                if (record)
-                    callback(*record);
+            {
+                if (!callback(*record))
+                {
+                    // Early termination if callback returns false
+                    return;
+                }
+            }
         }
 
-        // For each method to iterate over records of a specific type
-        void forEachOfType(const std::string &recordType, const std::function<void(const Record &)> &callback) const
-        {
-            for (const auto &[key, record] : records)
-                if (record && key.first == recordType)
-                    callback(*record);
-        }
-
-        // Generic search method that takes a predicate function
+        // Generic search method that takes a predicate function and a callback
+        // with early termination support
         template <typename T>
-        std::vector<const T *> findRecords(const std::function<bool(const T &)> &predicate) const
+        void findRecords(const std::function<bool(const T &)> &callback,
+                         const std::function<bool(const T &)> &predicate) const
         {
-            std::vector<const T *> results;
-            forEach([&](const Record &record)
+            forEach([&](const Record &record) -> bool
                     {
-                const auto* castRecord = dynamic_cast<const T*>(&record);
-                if (castRecord && predicate(*castRecord)) {
-                    results.push_back(castRecord);
-                } });
-            return results;
+                        const auto *castRecord = dynamic_cast<const T *>(&record);
+                        if (castRecord && predicate(*castRecord))
+                        {
+                            // Early terminate if callback returns false
+                            return callback(*castRecord);
+                        }
+                        return true; // Continue iteration
+                    });
         }
 
-        std::vector<const RARecord *> findRARecords(
+        void findRARecords(
+            const std::function<bool(const RARecord &)> &callback,
             std::optional<std::chrono::year_month_day> kaisaiDate = std::nullopt,
             std::optional<std::pair<std::chrono::year_month_day, std::chrono::year_month_day>> kaisaiDateRange = std::nullopt,
             std::optional<KeibajoCode> keibajoCode = std::nullopt,
+            std::optional<uint8_t> kaisaiKai = std::nullopt,
+            std::optional<uint8_t> kaisaiNichime = std::nullopt,
             std::optional<uint8_t> kyosoBango = std::nullopt,
             std::optional<uint16_t> kyori = std::nullopt,
             std::optional<std::pair<uint16_t, uint16_t>> kyoriRange = std::nullopt,
             std::optional<TrackCode> trackCode = std::nullopt) const
         {
-            return findRecords<RARecord>([&](const RARecord &record)
-                                         {
-                if (kaisaiDate && record.getKaisaiDate() != *kaisaiDate)
-                    return false;
-                if (kaisaiDateRange) {
-                    const auto& [startDate, endDate] = *kaisaiDateRange;
-                    if (record.getKaisaiDate() < startDate || record.getKaisaiDate() > endDate)
+            findRecords<RARecord>(callback, [&](const RARecord &record) -> bool
+                                  {
+                    if (kaisaiDate && record.getKaisaiDate() != *kaisaiDate)
                         return false;
-                }
-                if (keibajoCode && record.getKeibajoCode() != *keibajoCode)
-                    return false;
-                if (kyosoBango && record.getKyosoBango() != *kyosoBango)
-                    return false;
-                if (kyori && record.getKyori() != *kyori)
-                    return false;
-                if (kyoriRange) {
-                    const auto& [startKyori, endKyori] = *kyoriRange;
-                    if (record.getKyori() < startKyori || record.getKyori() > endKyori)
+                    if (kaisaiDateRange) {
+                        const auto& [startDate, endDate] = *kaisaiDateRange;
+                        if (record.getKaisaiDate() < startDate || record.getKaisaiDate() > endDate)
+                            return false;
+                    }
+                    if (keibajoCode && record.getKeibajoCode() != *keibajoCode)
                         return false;
-                }
-                if (trackCode && record.getTrackCode() != *trackCode)
-                    return false;
-                return true; });
+                    if (kyosoBango && record.getKyosoBango() != *kyosoBango)
+                        return false;
+                    if (kyori && record.getKyori() != *kyori)
+                        return false;
+                    if (kyoriRange) {
+                        const auto& [startKyori, endKyori] = *kyoriRange;
+                        if (record.getKyori() < startKyori || record.getKyori() > endKyori)
+                            return false;
+                    }
+                    if (trackCode && record.getTrackCode() != *trackCode)
+                        return false;
+                    return true; });
         }
 
-        std::vector<const SERecord *> findSERecords(
+        void findRARecords(const std::function<bool(const RARecord &)> &callback, const SERecord *seRecord) const
+        {
+            findRARecords(
+                callback,
+                seRecord->getKaisaiDate(),
+                std::nullopt,
+                seRecord->getKeibajoCode(),
+                seRecord->getKaisaiKai(),
+                seRecord->getKaisaiNichime(),
+                seRecord->getKyosoBango());
+        }
+
+        void findSERecords(
+            const std::function<bool(const SERecord &)> &callback,
             std::optional<std::chrono::year_month_day> kaisaiDate = std::nullopt,
             std::optional<std::pair<std::chrono::year_month_day, std::chrono::year_month_day>> kaisaiDateRange = std::nullopt,
             std::optional<KeibajoCode> keibajoCode = std::nullopt,
+            std::optional<uint8_t> kaisaiKai = std::nullopt,
+            std::optional<uint8_t> kaisaiNichime = std::nullopt,
             std::optional<uint8_t> kyosoBango = std::nullopt,
             std::optional<uint8_t> umaBango = std::nullopt,
             std::optional<uint8_t> kettoTorokuBango = std::nullopt) const
         {
-            return findRecords<SERecord>([&](const SERecord &record)
+            return findRecords<SERecord>(callback, [&](const SERecord &record)
                                          {
                 if (kaisaiDate && record.getKaisaiDate() != *kaisaiDate)
                     return false;
@@ -651,13 +679,22 @@ namespace JVData
                 if (kettoTorokuBango && record.getKettoTorokuBango() != *kettoTorokuBango)
                     return false;
                 return true; });
-        };
+        }
+
+        void findSERecords(const std::function<bool(const SERecord &)> callback, const RARecord *raRecord) const
+        {
+            return findSERecords(
+                callback,
+                raRecord->getKaisaiDate(),
+                std::nullopt,
+                raRecord->getKeibajoCode(),
+                raRecord->getKaisaiKai(),
+                raRecord->getKaisaiNichime(),
+                raRecord->getKyosoBango());
+        }
 
         // Get statistics methods
-        size_t getAddedCount() const
-        {
-            return added_count;
-        }
+        size_t getAddedCount() const { return added_count; }
         size_t getUpdatedCount() const { return updated_count; }
         size_t getSkippedCount() const { return skipped_count; }
         size_t getErrorCount() const { return error_count; }

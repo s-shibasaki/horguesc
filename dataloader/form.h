@@ -34,12 +34,14 @@ namespace dataloader {
 				delete components;
 			}
 		}
+	private: AxJVDTLabLib::AxJVLink^ axJVLink1;
+	protected:
 
 	private:
 		/// <summary>
 		/// 必要なデザイナー変数です。
 		/// </summary>
-		System::ComponentModel::Container ^components;
+		System::ComponentModel::Container^ components;
 
 #pragma region Windows Form Designer generated code
 		/// <summary>
@@ -48,12 +50,36 @@ namespace dataloader {
 		/// </summary>
 		void InitializeComponent(void)
 		{
-			this->components = gcnew System::ComponentModel::Container();
-			this->Size = System::Drawing::Size(300,300);
-			this->Text = L"Dataloader";
-			this->Padding = System::Windows::Forms::Padding(0);
+			System::ComponentModel::ComponentResourceManager^ resources = (gcnew System::ComponentModel::ComponentResourceManager(Form::typeid));
+			this->axJVLink1 = (gcnew AxJVDTLabLib::AxJVLink());
+			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->axJVLink1))->BeginInit();
+			this->SuspendLayout();
+			// 
+			// axJVLink1
+			// 
+			this->axJVLink1->Enabled = true;
+			this->axJVLink1->Location = System::Drawing::Point(13, 13);
+			this->axJVLink1->Name = L"axJVLink1";
+			this->axJVLink1->OcxState = (cli::safe_cast<System::Windows::Forms::AxHost::State^>(resources->GetObject(L"axJVLink1.OcxState")));
+			this->axJVLink1->Size = System::Drawing::Size(192, 192);
+			this->axJVLink1->TabIndex = 0;
+			// 
+			// Form
+			// 
+			this->AutoScaleDimensions = System::Drawing::SizeF(6, 13);
 			this->AutoScaleMode = System::Windows::Forms::AutoScaleMode::Font;
+			this->ClientSize = System::Drawing::Size(284, 261);
+			this->Controls->Add(this->axJVLink1);
+			this->Name = L"Form";
+			this->Text = L"Dataloader";
+			this->Load += gcnew System::EventHandler(this, &Form::Form_Load);
+			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->axJVLink1))->EndInit();
+			this->ResumeLayout(false);
+
 		}
 #pragma endregion
+	private:
+		System::Void Form_Load(System::Object^ sender, System::EventArgs^ e) {
+		}
 	};
 }

@@ -294,7 +294,7 @@ namespace JVData
         const auto &getRecordType() const { return recordType; }
         const auto &getDataType() const { return *dataType; } // Return a reference to DataType
         const auto &getCreationDate() const { return creationDate; }
-        virtual std::string_view getKey() { return key; }
+        std::string_view getKey() const { return key; }
 
         // レコードの基本情報を文字列として返す
         virtual std::string toString() const
@@ -496,7 +496,7 @@ namespace JVData
         // TODO: レコードを参照するためのメソッドを追加する
     private:
         // Use a composit key of record type + key
-        using CompositeKey = std::pair<std::string, std::string_view>;
+        using CompositeKey = std::pair<std::string, std::string>;
 
         // Hash function for the composite key
         struct CompositeKeyHash
@@ -504,7 +504,7 @@ namespace JVData
             std::size_t operator()(const CompositeKey &key) const
             {
                 return std::hash<std::string>{}(key.first) ^
-                       std::hash<std::string_view>{}(key.second);
+                       std::hash<std::string>{}(key.second);
             }
         };
 
@@ -526,15 +526,16 @@ namespace JVData
                 return false; // Invalid record
             }
 
-            std::string_view key = record->getKey();
-            if (key.empty())
+            std::string_view keyView = record->getKey();
+            if (keyView.empty())
             {
                 error_count++;
                 return false; // Invalid key
             }
 
             // Create composite key with record type and key
-            std::string recordTypeStr = std::string(record->getRecordType().getValue());
+            std::string key(keyView);
+            std::string recordTypeStr(record->getRecordType().getValue());
             CompositeKey compositeKey(recordTypeStr, key);
 
             // Check if we already have this record

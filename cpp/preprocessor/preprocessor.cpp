@@ -312,6 +312,40 @@ int main(int argc, char *argv[])
                                         std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::make_optional(std::pair<uint16_t, uint16_t>(1600, 2000)), std::nullopt);
             std::cout << "中距離レース: 合計 " << middleDistanceCount << " 件 (最初の2件のみ表示)\n";
 
+            // 時間計測: すべてのRAレコードについて関連するSEを検索
+            std::cout << "\n========== パフォーマンス測定 ==========\n";
+            std::cout << "すべてのRAレコードについて関連するSEレコードを検索する時間を計測します...\n";
+
+            auto startTime = std::chrono::high_resolution_clock::now();
+            int totalRACount = 0;
+            int totalSECount = 0;
+
+            recordManager.findRARecords([&](const JVData::RARecord &raRecord) -> bool
+                                        {
+                                            totalRACount++;
+                                            int seCount = 0;
+
+                                            recordManager.findSERecords([&](const JVData::SERecord &seRecord) -> bool
+                                                                        {
+                                                                            seCount++;
+                                                                            totalSECount++;
+                                                                            return true; // Continue finding all SE records
+                                                                        },
+                                                                        &raRecord);
+
+                                            return true; // Continue with next RA record
+                                        });
+
+            auto endTime = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+
+            std::cout << "計測完了:\n";
+            std::cout << "- 処理したRAレコード数: " << totalRACount << " 件\n";
+            std::cout << "- 関連するSEレコード数: " << totalSECount << " 件\n";
+            std::cout << "- 処理時間: " << duration.count() << " ミリ秒\n";
+            std::cout << "- 1件あたりの平均処理時間: " << (totalRACount > 0 ? duration.count() / totalRACount : 0) << " ミリ秒/RA\n";
+            std::cout << "==========================================\n";
+
             return 0;
         }
         catch (const std::exception &e)

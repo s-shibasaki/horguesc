@@ -5,6 +5,11 @@ VisualStudioVersion = 16.0.35931.194
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "dataloader", "dataloader\dataloader.vcxproj", "{3C25A045-1AC9-4414-960D-98C6D0CBED7D}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{CAB238FD-5080-48F2-B427-44B11F4C14C0}"
+	ProjectSection(SolutionItems) = preProject
+		horguesc.ini = horguesc.ini
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64

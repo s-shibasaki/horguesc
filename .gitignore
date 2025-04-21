@@ -1,8 +1,12 @@
-# ビルド出力ディレクトリ
+# Build output directories
 Debug/
 Release/
 x64/
 x86/
+bin/
+obj/
+
+# Compiled files
 *.obj
 *.exe
 *.dll
@@ -20,34 +24,42 @@ x86/
 *.opendb
 *.VC.db
 
-# Visual Studio関連
-.vscode/
+# Visual Studio related
 .vs/
+.vscode/
 *.user
 *.suo
 *.vcxproj.user
 *.filters
+ipch/
 
-# CMake関連
+# Interop files
+# Debug/AxInterop.JVDTLabLib.1.18.dll
+# Debug/Interop.JVDTLabLib.1.18.dll
+dataloader/Interop/
+
+# CMake related
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
 Makefile
 
-# その他
+# Configuration files
+horguesc.ini
+
+# Temporary files
 *.tmp
-*.log
 *.bak
 *.swp
 *.DS_Store
 Thumbs.db
 
-# Byte-compiled / optimized / DLL files
+# Python related
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Distribution / packaging
+# Python distribution / packaging
 dist/
 build/
 *.egg-info/
@@ -69,8 +81,7 @@ ENV/
 
 # IDE specific files
 .idea/
-.vscode/
-*.swp
 *.swo
 
+# Data directory
 data/

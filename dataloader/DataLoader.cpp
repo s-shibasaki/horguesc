@@ -5,11 +5,15 @@ using namespace System;
 using namespace AxJVDTLabLib;
 
 DataLoader::DataLoader(AxJVLink^ jvlink) {
-	m_jvlink = jvlink;
+	jvlink = jvlink;
 }
 
 bool DataLoader::Initialize() {
-	m_config = Config::LoadFromFile("config.json");
+	config = gcnew Config();
+	config->Load("horguesc.ini");
+
+
+
 	return true;
 }
 
@@ -19,6 +23,7 @@ bool DataLoader::Execute() {
 		return false;
 	}
 
-	Console::WriteLine("SID: {0}", m_config->Sid);
+	Console::WriteLine("Sid: {0}", config->Sid);
+	Console::WriteLine("StartYear: {0}", config->StartYear);
 	return true;
 }

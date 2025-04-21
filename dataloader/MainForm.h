@@ -37,8 +37,8 @@ namespace dataloader {
 			}
 		}
 
-	private:
-		AxJVDTLabLib::AxJVLink^ m_jvlink;
+	private: 
+		AxJVDTLabLib::AxJVLink^ jvlink;
 
 		/// <summary>
 		/// 必要なデザイナー変数です。
@@ -53,29 +53,29 @@ namespace dataloader {
 		void InitializeComponent(void)
 		{
 			System::ComponentModel::ComponentResourceManager^ resources = (gcnew System::ComponentModel::ComponentResourceManager(MainForm::typeid));
-			this->m_jvlink = (gcnew AxJVDTLabLib::AxJVLink());
-			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->m_jvlink))->BeginInit();
+			this->jvlink = (gcnew AxJVDTLabLib::AxJVLink());
+			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->jvlink))->BeginInit();
 			this->SuspendLayout();
 			// 
-			// m_jvlink
+			// jvlink
 			// 
-			this->m_jvlink->Enabled = true;
-			this->m_jvlink->Location = System::Drawing::Point(13, 13);
-			this->m_jvlink->Name = L"m_jvlink";
-			this->m_jvlink->OcxState = (cli::safe_cast<System::Windows::Forms::AxHost::State^>(resources->GetObject(L"m_jvlink.OcxState")));
-			this->m_jvlink->Size = System::Drawing::Size(192, 192);
-			this->m_jvlink->TabIndex = 0;
+			this->jvlink->Enabled = true;
+			this->jvlink->Location = System::Drawing::Point(13, 13);
+			this->jvlink->Name = L"jvlink";
+			this->jvlink->OcxState = (cli::safe_cast<System::Windows::Forms::AxHost::State^>(resources->GetObject(L"jvlink.OcxState")));
+			this->jvlink->Size = System::Drawing::Size(192, 192);
+			this->jvlink->TabIndex = 0;
 			// 
 			// MainForm
 			// 
 			this->AutoScaleDimensions = System::Drawing::SizeF(6, 13);
 			this->AutoScaleMode = System::Windows::Forms::AutoScaleMode::Font;
 			this->ClientSize = System::Drawing::Size(284, 261);
-			this->Controls->Add(this->m_jvlink);
+			this->Controls->Add(this->jvlink);
 			this->Name = L"MainForm";
 			this->Text = L"DataLoader";
 			this->Load += gcnew System::EventHandler(this, &MainForm::MainForm_Load);
-			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->m_jvlink))->EndInit();
+			(cli::safe_cast<System::ComponentModel::ISupportInitialize^>(this->jvlink))->EndInit();
 			this->ResumeLayout(false);
 
 		}
@@ -83,7 +83,7 @@ namespace dataloader {
 
 	private:
 		System::Void MainForm_Load(System::Object^ sender, System::EventArgs^ e) {
-			DataLoader^ dataLoader = gcnew DataLoader(m_jvlink);
+			DataLoader^ dataLoader = gcnew DataLoader(jvlink);
 			if (!dataLoader->Execute())
 				Environment::Exit(1);
 			Application::Exit();

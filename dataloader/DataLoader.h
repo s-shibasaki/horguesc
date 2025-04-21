@@ -3,8 +3,8 @@ ref class Config;
 ref class DataLoader
 {
 private:
-	AxJVDTLabLib::AxJVLink^ m_jvlink;
-	Config^ m_config;
+	AxJVDTLabLib::AxJVLink^ jvlink;
+	Config^ config;
 	bool Initialize();
 
 public:

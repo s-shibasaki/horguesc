@@ -73,6 +73,7 @@ bool DataLoader::Execute() {
 
 	int currentYear = DateTime::Now.Year;
 	for (int year = config->StartYear; year < currentYear; year++) {
+		Console::WriteLine("Processing data for year: {0}", year);
 		String^ fromDate = String::Format("{0}0101000000-{1}0101000000", year, year + 1);
 		JVOpenParams^ params = gcnew JVOpenParams("RACEBLDNSNPNSLOPWOODYSCHMING", fromDate, 4);
 		if (!ProcessChunk(params)) {
@@ -80,6 +81,7 @@ bool DataLoader::Execute() {
 			return false;
 		}
 	}
+	Console::WriteLine("Processing data for year: {0}", currentYear);
 	String^ lastFromDate = String::Format("{0}0101000000", currentYear);
 	JVOpenParams^ lastParams = gcnew JVOpenParams("RACEBLDNSNPNSLOPWOODYSCHMINGTOKUDIFNHOSNHOYUCOMM", lastFromDate, 4);
 	if (!ProcessChunk(lastParams)) {

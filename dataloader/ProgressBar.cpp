@@ -21,6 +21,10 @@ void ProgressBar::Update(int progress) {
 	if (progress > total)
 		progress = total;
 
+	// i’»‚É•Ï‰»‚ª‚È‚¢ê‡‚ÍXV‚µ‚È‚¢
+	if (this->current == progress)
+		return;
+
 	this->current = progress;
 
 	double percentage = static_cast<double>(current) / total;

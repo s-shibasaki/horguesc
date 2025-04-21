@@ -9,6 +9,7 @@ Config::Config() {
 }
 
 bool Config::Load(String^ iniFile) {
+	Console::WriteLine("Loading configuration from: {0}", iniFile);
 
 	if (!File::Exists(iniFile)) {
 		Console::WriteLine("File not found: {0}", iniFile);
@@ -36,10 +37,15 @@ bool Config::Load(String^ iniFile) {
 		String^ value = line->Substring(equalPos + 1)->Trim();
 
 		if (currentSection == "dataloader") {
-			if (key == "Sid")
+			if (key == "Sid") {
+				Console::WriteLine("Sid: {0}", value);
 				_sid = value;
-			if (key == "StartYear")
-				_startYear = Int32::Parse(value);
+			}
+			if (key == "StartYear") {
+				int intValue = Int32::Parse(value);
+				Console::WriteLine("StartYear: {0}", value);
+				_startYear = intValue;
+			}
 		}
 	}
 

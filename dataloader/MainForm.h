@@ -83,7 +83,7 @@ namespace dataloader {
 
 	private:
 		System::Void MainForm_Load(System::Object^ sender, System::EventArgs^ e) {
-			DataLoader^ dataLoader = gcnew DataLoader();
+			DataLoader^ dataLoader = gcnew DataLoader(m_jvlink);
 			if (!dataLoader->Execute())
 				Environment::Exit(1);
 			Application::Exit();

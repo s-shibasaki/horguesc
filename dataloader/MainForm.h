@@ -36,12 +36,10 @@ namespace dataloader {
 				delete components;
 			}
 		}
-	private: AxJVDTLabLib::AxJVLink^ m_jvlink;
-	protected:
-
-	protected:
 
 	private:
+		AxJVDTLabLib::AxJVLink^ m_jvlink;
+
 		/// <summary>
 		/// 必要なデザイナー変数です。
 		/// </summary>
@@ -82,11 +80,13 @@ namespace dataloader {
 
 		}
 #pragma endregion
-	private: System::Void MainForm_Load(System::Object^ sender, System::EventArgs^ e) {
-		DataLoader^ dataLoader = gcnew DataLoader();
-		if (!dataLoader->Execute())
-			Environment::Exit(1);
-		Application::Exit();
-	}
+
+	private:
+		System::Void MainForm_Load(System::Object^ sender, System::EventArgs^ e) {
+			DataLoader^ dataLoader = gcnew DataLoader();
+			if (!dataLoader->Execute())
+				Environment::Exit(1);
+			Application::Exit();
+		}
 	};
 }

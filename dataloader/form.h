@@ -1,4 +1,5 @@
 #pragma once
+#include "dataloader.h"
 
 namespace dataloader {
 
@@ -34,7 +35,11 @@ namespace dataloader {
 				delete components;
 			}
 		}
-	private: AxJVDTLabLib::AxJVLink^ axJVLink1;
+
+	private:
+		AxJVDTLabLib::AxJVLink^ axJVLink1;
+		DataLoader^ dataloader;
+
 	protected:
 
 	private:
@@ -80,6 +85,11 @@ namespace dataloader {
 #pragma endregion
 	private:
 		System::Void Form_Load(System::Object^ sender, System::EventArgs^ e) {
+			dataloader = gcnew DataLoader(axJVLink1);
+			if (!dataloader->Execute()) {
+				Environment::Exit(1);
+			}
+			Application::Exit();
 		}
 	};
 }

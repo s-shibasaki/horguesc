@@ -20,8 +20,8 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
-    <ProjectGuid>{12AF606F-59B1-42F1-94F5-905ED33E5DB5}</ProjectGuid>
-    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
+    <ProjectGuid>{3C25A045-1AC9-4414-960D-98C6D0CBED7D}</ProjectGuid>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <Keyword>ManagedCProj</Keyword>
     <RootNamespace>dataloader</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
@@ -82,9 +82,6 @@
     <Link>
       <AdditionalDependencies />
     </Link>
-    <PostBuildEvent>
-      <Command>xcopy /y /d "$(ProjectDir)Interop\AxInterop.JVDTLabLib.1.18.dll" "$(TargetDir)"</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -94,9 +91,6 @@
     <Link>
       <AdditionalDependencies />
     </Link>
-    <PostBuildEvent>
-      <Command>xcopy /y /d "$(ProjectDir)Interop\AxInterop.JVDTLabLib.1.18.dll" "$(TargetDir)"</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -106,9 +100,6 @@
     <Link>
       <AdditionalDependencies />
     </Link>
-    <PostBuildEvent>
-      <Command>xcopy /y /d "$(ProjectDir)Interop\AxInterop.JVDTLabLib.1.18.dll" "$(TargetDir)"</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -118,51 +109,8 @@
     <Link>
       <AdditionalDependencies />
     </Link>
-    <PostBuildEvent>
-      <Command>xcopy /y /d "$(ProjectDir)Interop\AxInterop.JVDTLabLib.1.18.dll" "$(TargetDir)"</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <Reference Include="System" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.Windows.Forms" />
-    <Reference Include="System.Xml" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="dataloader.cpp" />
-    <ClCompile Include="form.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="dataloader.h" />
-    <ClInclude Include="form.h">
-      <FileType>CppForm</FileType>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-    <COMReference Include="JVDTLabLib.1.18">
-      <VersionMinor>18</VersionMinor>
-      <VersionMajor>1</VersionMajor>
-      <Guid>2ab17740-0c41-11d7-916f-0003479beb3f</Guid>
-      <Lcid>0</Lcid>
-      <WrapperTool>tlbimp</WrapperTool>
-      <Isolated>false</Isolated>
-      <EmbedInteropTypes>true</EmbedInteropTypes>
-    </COMReference>
-    <COMReference Include="AxJVDTLabLib.1.18">
-      <WrapperTool>aximp</WrapperTool>
-      <VersionMinor>18</VersionMinor>
-      <VersionMajor>1</VersionMajor>
-      <Guid>2ab17740-0c41-11d7-916f-0003479beb3f</Guid>
-      <Lcid>0</Lcid>
-      <Isolated>false</Isolated>
-      <EmbedInteropTypes>true</EmbedInteropTypes>
-    </COMReference>
-  </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="form.resx">
-      <DependentUpon>form.h</DependentUpon>
-    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

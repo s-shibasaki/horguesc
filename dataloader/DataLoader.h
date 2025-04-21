@@ -16,6 +16,7 @@ private:
 	Config^ config;
 	bool Initialize();
 	bool ProcessChunk(JVOpenParams^);
+	int WaitForDownloadCompletion(int downloadCount);
 
 public:
 	DataLoader(AxJVDTLabLib::AxJVLink^);

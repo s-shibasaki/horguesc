@@ -37,24 +37,32 @@ bool DataLoader::ProcessChunk(JVOpenParams^ params) {
 	}
 	Console::WriteLine("OK. readCount={0}, downloadCount={1}, lastFileTimestamp={2}", readCount, downloadCount, lastFileTimestamp);
 
-	if (downloadCount > 0) {
-		int jvStatusReturnCode = 0;
-		ProgressBar^ jvStatusProgressBar = gcnew ProgressBar(downloadCount, 50, "Downloading files");
-		while (jvStatusReturnCode != downloadCount) {
-			jvStatusReturnCode = jvlink->JVStatus();
-			if (jvStatusReturnCode < 0) {
-				jvStatusProgressBar->Abort();
-				Console::WriteLine("Error occurred during file download. Error code: {0}", jvStatusReturnCode);
-				return false;
-			}
-			jvStatusProgressBar->Update(jvStatusReturnCode);
-		}
-		jvStatusProgressBar->Complete();
+	int downloadErrorCode = WaitForDownloadCompletion(downloadCount);
+	if (downloadErrorCode != 0) {
+		Console::WriteLine("Error occurred during file download. Error code: {0}", downloadErrorCode);
+		return false;
 	}
 
 	jvlink->JVClose();
 
 	return true;
+}
+
+int DataLoader::WaitForDownloadCompletion(int downloadCount) {
+	if (downloadCount == 0)
+		return 0;
+	int jvStatusReturnCode = 0;
+	ProgressBar^ jvStatusProgressBar = gcnew ProgressBar(downloadCount, 50, "Downloading files");
+	while (jvStatusReturnCode != downloadCount) {
+		jvStatusReturnCode = jvlink->JVStatus();
+		if (jvStatusReturnCode < 0) {
+			Console::WriteLine();
+			return jvStatusReturnCode;
+		}
+		jvStatusProgressBar->Update(jvStatusReturnCode);
+	}
+	Console::WriteLine();
+	return 0;
 }
 
 bool DataLoader::Execute() {
@@ -79,7 +87,5 @@ bool DataLoader::Execute() {
 		return false;
 	}
 
-	Console::WriteLine("Sid: {0}", config->Sid);
-	Console::WriteLine("StartYear: {0}", config->StartYear);
 	return true;
 }

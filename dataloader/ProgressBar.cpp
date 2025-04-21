@@ -38,13 +38,3 @@ void ProgressBar::Update(int progress) {
 	Console::Out->Flush();
 }
 
-void ProgressBar::Complete() {
-	Update(total);
-	Console::WriteLine();
-}
-
-void ProgressBar::Abort() {
-	Console::WriteLine();
-}
-
-

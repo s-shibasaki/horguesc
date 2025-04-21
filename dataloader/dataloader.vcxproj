@@ -119,6 +119,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="MainForm.cpp" />
+    <ClCompile Include="Program.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="MainForm.h">

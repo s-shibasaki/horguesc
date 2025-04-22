@@ -1,5 +1,6 @@
 #pragma once
 ref class Config;
+ref class RecordProcessor;
 ref class DataLoader {
 private:
 	ref struct JVOpenParams {
@@ -14,10 +15,10 @@ private:
 	};
 	AxJVDTLabLib::AxJVLink^ jvlink;
 	Config^ config;
+	RecordProcessor^ recordProcessor;
 	bool Initialize();
 	bool ProcessChunk(JVOpenParams^);
 	int WaitForDownloadCompletion(int downloadCount);
-	bool ProcessRecord(System::String^ line);
 
 public:
 	DataLoader(AxJVDTLabLib::AxJVLink^);

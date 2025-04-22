@@ -135,6 +135,7 @@
     <ClCompile Include="MainForm.cpp" />
     <ClCompile Include="Program.cpp" />
     <ClCompile Include="ProgressBar.cpp" />
+    <ClCompile Include="RecordProcessor.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Config.h" />
@@ -143,6 +144,7 @@
       <FileType>CppForm</FileType>
     </ClInclude>
     <ClInclude Include="ProgressBar.h" />
+    <ClInclude Include="RecordProcessor.h" />
   </ItemGroup>
   <ItemGroup>
     <COMReference Include="JVDTLabLib.1.18">

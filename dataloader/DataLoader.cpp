@@ -1,6 +1,7 @@
 #include "DataLoader.h"
 #include "Config.h"
 #include "ProgressBar.h"
+#include "RecordProcessor.h"
 
 using namespace System;
 using namespace AxJVDTLabLib;
@@ -13,6 +14,12 @@ DataLoader::DataLoader(AxJVLink^ jvlink) {
 bool DataLoader::Initialize() {
 	config = gcnew Config();
 	config->Load("horguesc.ini");
+
+	recordProcessor = gcnew RecordProcessor();
+	if (!recordProcessor->InitializeDatabase()) {
+		Console::WriteLine("Database initialization failed.");
+		return false;
+	}
 
 	Console::Write("JVLink Initialization: ");
 	int jvInitReturnCode = jvlink->JVInit(config->Sid);
@@ -93,20 +100,21 @@ bool DataLoader::ProcessChunk(JVOpenParams^ params) {
 			Console::WriteLine();
 			break;
 		}
-		if (!ProcessRecord(buffer)) {
+		int processResult = recordProcessor->ProcessRecord(buffer);
+		if (processResult == RecordProcessor::PROCESS_ERROR) {
 			Console::WriteLine();
 			Console::WriteLine("Error occured during process record.");
 			return false;
+		}
+		else if (processResult == RecordProcessor::PROCESS_SKIP) {
+			jvlink->JVSkip();
+			jvGetsProgressBar->Increment();
 		}
 	}
 
 	jvlink->JVClose();
 
 	return true;
-}
-
-bool DataLoader::ProcessRecord(String^ line) {
-	return false;
 }
 
 int DataLoader::WaitForDownloadCompletion(int downloadCount) {

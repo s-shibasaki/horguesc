@@ -40,19 +40,44 @@ bool DataLoader::Execute() {
 }
 
 bool DataLoader::InitializeDatabase() {
-	Console::Write("Checking if database exists: ");
 	try {
+		Console::Write("Connecting to postgres: ");
 		String^ connectionString = String::Format("Host={0};Port={1};Database=postgres;Username={2};Password={3};", config->DbHost, config->DbPort, config->DbUsername, config->DbPassword);
 		NpgsqlConnection^ connection = gcnew NpgsqlConnection(connectionString);
 		connection->Open();
-		NpgsqlCommand^ command = gcnew NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @dbname", connection);
+		Console::WriteLine("OK.");
+
+		// 共有する変数
+		NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
+		Object^ result;
+
+		Console::Write("Checking if database exists: ");
+		command->CommandText = "SELECT 1 FROM pg_database WHERE datname = @dbname";
+		command->Parameters->Clear();
 		command->Parameters->AddWithValue("@dbname", config->DbName);
-		Object^ result = command->ExecuteScalar();
+		result = command->ExecuteScalar();
+
 		if (result != nullptr) {
+			// データベースが存在した
+			Console::WriteLine("exists.");
+
+			// データベースを削除しない場合、このまま抜ける
+			if (!config->DeleteDatabase)
+				return true;
+
+			// 削除する場合
+			Console::Write("Deleting database: ");
+			command->CommandText = String::Format("DROP DATABASE \"{0}\"", config->DbName);
+			command->Parameters->Clear();
+			command->ExecuteNonQuery();
 			Console::WriteLine("OK.");
-			return true;
 		}
-		Console::WriteLine("does not exists.");
+		else {
+			// データベースが存在しなかった
+			Console::WriteLine("does not exists.");
+		}
+
+		// データベース削除後、または存在しなかった場合
 		Console::Write("Creating new database: ");
 		command->CommandText = String::Format("CREATE DATABASE \"{0}\"", config->DbName);
 		command->Parameters->Clear();

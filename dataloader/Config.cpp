@@ -6,6 +6,7 @@ using namespace System::IO;
 Config::Config() {
 	_sid = "UNKNOWN";
 	_startYear = 1986;
+	_deleteDatabase = false;
 
 	_dbHost = "localhost";
 	_dbPort = 5432;
@@ -47,10 +48,15 @@ bool Config::Load(String^ iniFile) {
 				Console::WriteLine("Sid: {0}", value);
 				_sid = value;
 			}
-			if (key == "StartYear") {
+			else if (key == "StartYear") {
 				int intValue = Int32::Parse(value);
-				Console::WriteLine("StartYear: {0}", value);
+				Console::WriteLine("StartYear: {0}", intValue);
 				_startYear = intValue;
+			}
+			else if ("DeleteDatabase") {
+				bool boolValue = Boolean::Parse(value);
+				Console::WriteLine("DeleteDatabase: {0}", boolValue);
+				_deleteDatabase = boolValue;
 			}
 		}
 		else if (currentSection == "database") {

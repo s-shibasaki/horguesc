@@ -3,6 +3,7 @@ private:
 	// DataLoader
 	System::String^ _sid;
 	int _startYear;
+	bool _deleteDatabase;
 
 	// Database
 	System::String^ _dbHost;
@@ -15,6 +16,7 @@ public:
 	// Dataloader
 	property System::String^ Sid {System::String^ get() { return _sid; }};
 	property int StartYear {int get() { return _startYear; }};
+	property bool DeleteDatabase {bool get() { return _deleteDatabase; }};
 
 	// Database
 	property System::String^ DbHost {System::String^ get() { return _dbHost; }};

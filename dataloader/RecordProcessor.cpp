@@ -19,7 +19,12 @@ bool RecordProcessor::Initialize() {
 			"keibajo_code VARCHAR(2), "
 			"kaisai_kai INT, "
 			"kaisai_nichime INT, "
-			"kyoso_bango INT)";
+			"kyoso_bango INT, "
+			"kyori INT, "
+			"track_code VARCHAR(2), "
+			"course_kubun VARCHAR(2), "
+			"tenko_code VARCHAR(1), "
+			"babajotai_code VARCHAR(1))";
 		command->ExecuteNonQuery();
 
 		return true;

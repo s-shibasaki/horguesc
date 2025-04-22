@@ -15,11 +15,12 @@ private:
 	};
 	AxJVDTLabLib::AxJVLink^ jvlink;
 	Config^ config;
+	Npgsql::NpgsqlConnection^ connection;
 	RecordProcessor^ recordProcessor;
 	bool Initialize();
 	bool ProcessChunk(JVOpenParams^);
 	int WaitForDownloadCompletion(int downloadCount);
-
+	bool InitializeDatabase();
 public:
 	DataLoader(AxJVDTLabLib::AxJVLink^);
 	bool Execute();

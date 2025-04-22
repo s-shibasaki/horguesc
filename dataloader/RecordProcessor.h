@@ -2,6 +2,7 @@
 ref class RecordProcessor
 {
 private:
+
 public:
 	static const int PROCESS_ERROR = -1;
 	static const int PROCESS_SUCCESS = 0;
@@ -11,6 +12,5 @@ public:
 	~RecordProcessor();
 
 	int ProcessRecord(System::String^ record);
-	bool InitializeDatabase();
 };
 

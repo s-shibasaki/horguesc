@@ -6,30 +6,10 @@
 using namespace System;
 using namespace AxJVDTLabLib;
 using namespace System::Runtime::InteropServices;
+using namespace Npgsql;
 
 DataLoader::DataLoader(AxJVLink^ jvlink) {
 	this->jvlink = jvlink;
-}
-
-bool DataLoader::Initialize() {
-	config = gcnew Config();
-	config->Load("horguesc.ini");
-
-	recordProcessor = gcnew RecordProcessor();
-	if (!recordProcessor->InitializeDatabase()) {
-		Console::WriteLine("Database initialization failed.");
-		return false;
-	}
-
-	Console::Write("JVLink Initialization: ");
-	int jvInitReturnCode = jvlink->JVInit(config->Sid);
-	if (jvInitReturnCode != 0) {
-		Console::WriteLine("failed. Error code: {0}", jvInitReturnCode);
-		return false;
-	}
-	Console::WriteLine("OK.");
-
-	return true;
 }
 
 bool DataLoader::Execute() {
@@ -58,6 +38,71 @@ bool DataLoader::Execute() {
 
 	return true;
 }
+
+bool DataLoader::InitializeDatabase() {
+	Console::Write("Checking if database exists: ");
+	try {
+		String^ connectionString = String::Format("Host={0};Port={1};Database=postgres;Username={2};Password={3};Encoding=SJIS;", config->DbHost, config->DbPort, config->DbUsername, config->DbPassword);
+		NpgsqlConnection^ connection = gcnew NpgsqlConnection(connectionString);
+		connection->Open();
+		NpgsqlCommand^ command = gcnew NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @dbname", connection);
+		command->Parameters->AddWithValue("@dbname", config->DbName);
+		Object^ result = command->ExecuteScalar();
+		if (result != nullptr) {
+			Console::WriteLine("OK.");
+			return true;
+		}
+		Console::WriteLine("does not exists.");
+		Console::Write("Creating new database: ");
+		command->CommandText = String::Format("CREATE DATABASE \"{0}\"", config->DbName);
+		command->Parameters->Clear();
+		command->ExecuteNonQuery();
+		Console::WriteLine("OK.");
+		return true;
+	}
+	catch (Exception^ ex) {
+		Console::WriteLine("failed. {0}", ex->Message);
+		return false;
+	}
+}
+
+bool DataLoader::Initialize() {
+	config = gcnew Config();
+	config->Load("horguesc.ini");
+
+	if (!InitializeDatabase()) {
+		Console::WriteLine("Database initialization failed.");
+		return false;
+	}
+
+	Console::WriteLine("Opening database connection:");
+	try {
+		String^ connectionString = String::Format("Host={0};Port={1};Database={2};Username={3};Password={4};Encoding=SJIS;", config->DbHost, config->DbPort, config->DbName, config->DbUsername, config->DbPassword);
+		connection = gcnew NpgsqlConnection(connectionString);
+		connection->Open();
+	}
+	catch (Exception^ ex) {
+		Console::WriteLine("failed. {0}", ex->Message);
+		return false;
+	}
+	Console::WriteLine("OK.");
+
+	recordProcessor = gcnew RecordProcessor();
+
+	Console::Write("JVLink Initialization: ");
+	int jvInitReturnCode = jvlink->JVInit(config->Sid);
+	if (jvInitReturnCode != 0) {
+		Console::WriteLine("failed. Error code: {0}", jvInitReturnCode);
+		return false;
+	}
+	Console::WriteLine("OK.");
+
+	return true;
+}
+
+
+
+
 
 bool DataLoader::ProcessChunk(JVOpenParams^ params) {
 	int readCount;

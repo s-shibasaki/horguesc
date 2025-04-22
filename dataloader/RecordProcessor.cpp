@@ -23,6 +23,3 @@ int RecordProcessor::ProcessRecord(String^ record) {
 	return PROCESS_SKIP;
 }
 
-bool RecordProcessor::InitializeDatabase() {
-	return true;
-}

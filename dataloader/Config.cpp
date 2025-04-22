@@ -6,6 +6,12 @@ using namespace System::IO;
 Config::Config() {
 	_sid = "UNKNOWN";
 	_startYear = 1986;
+
+	_dbHost = "localhost";
+	_dbPort = 5432;
+	_dbName = "horguesc";
+	_dbUsername = "postgres";
+	_dbPassword = "postgres";
 }
 
 bool Config::Load(String^ iniFile) {
@@ -46,6 +52,30 @@ bool Config::Load(String^ iniFile) {
 				Console::WriteLine("StartYear: {0}", value);
 				_startYear = intValue;
 			}
+		}
+		else if (currentSection == "database") {
+			if (key == "Host") {
+				Console::WriteLine("Database Host: {0}", value);
+				_dbHost = value;
+			}
+			else if (key == "Port") {
+				int intValue = Int32::Parse(value);
+				Console::WriteLine("Database Port: {0}", intValue);
+				_dbPort = intValue;
+			}
+			else if (key == "Database") {
+				Console::WriteLine("Database Name: {0}", value);
+				_dbName = value;
+			}
+			else if (key == "Username") {
+				Console::WriteLine("Database Username: {0}", value);
+				_dbUsername = value;
+			}
+			else if (key == "Password") {
+				Console::WriteLine("Database Password: ********");
+				_dbPassword = value;
+			}
+
 		}
 	}
 

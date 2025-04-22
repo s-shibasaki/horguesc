@@ -1,6 +1,7 @@
 #include "RecordProcessor.h"
 
 using namespace System;
+using namespace Npgsql;
 
 RecordProcessor::RecordProcessor() {}
 

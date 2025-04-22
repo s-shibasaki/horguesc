@@ -5,6 +5,7 @@ x64/
 x86/
 bin/
 obj/
+packages/
 
 # Compiled files
 *.obj

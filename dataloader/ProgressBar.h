@@ -10,5 +10,6 @@ private:
 public:
 	ProgressBar(int total, int barWidth, System::String^ prefix);
 	void Update(int progress);
+	int Increment();
 };
 

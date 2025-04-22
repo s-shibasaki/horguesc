@@ -42,3 +42,9 @@ void ProgressBar::Update(int progress) {
 	Console::Out->Flush();
 }
 
+int ProgressBar::Increment() {
+	int progress = current + 1;
+	Update(progress);
+	return progress;
+}
+

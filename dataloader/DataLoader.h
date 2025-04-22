@@ -17,6 +17,7 @@ private:
 	bool Initialize();
 	bool ProcessChunk(JVOpenParams^);
 	int WaitForDownloadCompletion(int downloadCount);
+	bool ProcessRecord(System::String^ line);
 
 public:
 	DataLoader(AxJVDTLabLib::AxJVLink^);

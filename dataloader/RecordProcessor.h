@@ -2,14 +2,13 @@
 ref class RecordProcessor
 {
 private:
-
+	Npgsql::NpgsqlConnection^ connection;
 public:
 	static const int PROCESS_ERROR = -1;
 	static const int PROCESS_SUCCESS = 0;
 	static const int PROCESS_SKIP = 1;
 
-	RecordProcessor();
-	~RecordProcessor();
+	RecordProcessor(Npgsql::NpgsqlConnection^ connection);
 
 	int ProcessRecord(System::String^ record);
 };

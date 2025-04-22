@@ -87,7 +87,7 @@ bool DataLoader::Initialize() {
 	}
 	Console::WriteLine("OK.");
 
-	recordProcessor = gcnew RecordProcessor();
+	recordProcessor = gcnew RecordProcessor(connection);
 
 	Console::Write("JVLink Initialization: ");
 	int jvInitReturnCode = jvlink->JVInit(config->Sid);

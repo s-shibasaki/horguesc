@@ -42,7 +42,7 @@ bool DataLoader::Execute() {
 bool DataLoader::InitializeDatabase() {
 	Console::Write("Checking if database exists: ");
 	try {
-		String^ connectionString = String::Format("Host={0};Port={1};Database=postgres;Username={2};Password={3};Encoding=SJIS;", config->DbHost, config->DbPort, config->DbUsername, config->DbPassword);
+		String^ connectionString = String::Format("Host={0};Port={1};Database=postgres;Username={2};Password={3};", config->DbHost, config->DbPort, config->DbUsername, config->DbPassword);
 		NpgsqlConnection^ connection = gcnew NpgsqlConnection(connectionString);
 		connection->Open();
 		NpgsqlCommand^ command = gcnew NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @dbname", connection);
@@ -75,9 +75,9 @@ bool DataLoader::Initialize() {
 		return false;
 	}
 
-	Console::WriteLine("Opening database connection:");
+	Console::Write("Opening database connection: ");
 	try {
-		String^ connectionString = String::Format("Host={0};Port={1};Database={2};Username={3};Password={4};Encoding=SJIS;", config->DbHost, config->DbPort, config->DbName, config->DbUsername, config->DbPassword);
+		String^ connectionString = String::Format("Host={0};Port={1};Database={2};Username={3};Password={4};", config->DbHost, config->DbPort, config->DbName, config->DbUsername, config->DbPassword);
 		connection = gcnew NpgsqlConnection(connectionString);
 		connection->Open();
 	}
@@ -88,6 +88,10 @@ bool DataLoader::Initialize() {
 	Console::WriteLine("OK.");
 
 	recordProcessor = gcnew RecordProcessor(connection);
+	if (!recordProcessor->Initialize()) {
+		Console::WriteLine("Failed to initialize Record Processor.");
+		return false;
+	}
 
 	Console::Write("JVLink Initialization: ");
 	int jvInitReturnCode = jvlink->JVInit(config->Sid);

@@ -11,7 +11,8 @@ bool RecordProcessor::Initialize() {
 	try {
 		NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
 
-		command->CommandText = "CREATE TABLE IF NOT EXISTS ra ("
+		command->CommandText = 
+			"CREATE TABLE IF NOT EXISTS ra ("
 			"id SERIAL PRIMARY KEY, "
 			"creation_date DATE, "
 			"data_type VARCHAR(1), "
@@ -27,6 +28,31 @@ bool RecordProcessor::Initialize() {
 			"babajotai_code VARCHAR(1))";
 		command->ExecuteNonQuery();
 
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS se ("
+			"id SERIAL PRIMARY KEY, "
+			"creation_date DATE, "
+			"data_type VARCHAR(1), "
+			"ra_id INT, "
+			"wakuban INT, "
+			"umaban INT, "
+			"um_id INT)";
+		command->ExecuteNonQuery();
+
+		command->CommandText =
+			"CREATE INDEX IF NOT EXISTS idx_ra_key ON ra ("
+			"kaisai_date, "
+			"keibajo_code, "
+			"kaisai_kai, "
+			"kaisai_nichime, "
+			"kyoso_bango)";
+		command->ExecuteNonQuery();
+
+		command->CommandText =
+			"CREATE INDEX IF NOT EXISTS idx_se_key ON se ("
+			"ra_id, "
+			"umaban)";
+
 		return true;
 	}
 	catch (Exception^ ex) {
@@ -39,7 +65,6 @@ int RecordProcessor::ProcessRecord(String^ record) {
 	String^ recordTypeId = record->Substring(0, 2);
 
 	if (recordTypeId == "RA") {
-		// process ra record
 		return PROCESS_SUCCESS;
 	}
 
@@ -49,8 +74,7 @@ int RecordProcessor::ProcessRecord(String^ record) {
 	}
 
 	else if (recordTypeId == "UM") {
-		// process um record
-		return PROCESS_SUCCESS;
+		return PROCESS_SKIP;
 	}
 
 	return PROCESS_SKIP;

@@ -129,10 +129,6 @@ bool DataLoader::Initialize() {
 	return true;
 }
 
-
-
-
-
 bool DataLoader::ProcessChunk(JVOpenParams^ params) {
 	int readCount;
 	int downloadCount;
@@ -152,38 +148,46 @@ bool DataLoader::ProcessChunk(JVOpenParams^ params) {
 		return false;
 	}
 
-	int jvReadReturnCode;
-	ProgressBar^ jvGetsProgressBar = gcnew ProgressBar(readCount, 50, "Reading files");
-	while (true) {
-		String^ fileName;
-		int size = 110000;
-		String^ buffer;
-		jvReadReturnCode = jvlink->JVRead(buffer, size, fileName);
 
-		if (jvReadReturnCode < -1) {
-			Console::WriteLine();
-			Console::WriteLine("Error occured during data read. Error code: {0}", jvReadReturnCode);
-			return false;
+	ProgressBar^ jvGetsProgressBar = gcnew ProgressBar(readCount, 50, "Reading files");
+	try {
+		int jvReadReturnCode;
+		while (true) {
+			String^ fileName;
+			int size = 110000;
+			String^ buffer;
+			jvReadReturnCode = jvlink->JVRead(buffer, size, fileName);
+
+			if (jvReadReturnCode < -1) {
+				Console::WriteLine();
+				Console::WriteLine("Error occured during data read. Error code: {0}", jvReadReturnCode);
+				return false;
+			}
+			else if (jvReadReturnCode == -1) {
+				jvGetsProgressBar->Increment();
+				continue;
+			}
+			else if (jvReadReturnCode == 0) {
+				jvGetsProgressBar->Increment();
+				Console::WriteLine();
+				break;
+			}
+			int processResult = recordProcessor->ProcessRecord(buffer);
+			if (processResult == RecordProcessor::PROCESS_ERROR) {
+				// RecordProcessor‚Å‰üsÏ‚Ý
+				Console::WriteLine("Error occured during process record.");
+				return false;
+			}
+			else if (processResult == RecordProcessor::PROCESS_SKIP) {
+				jvlink->JVSkip();
+				jvGetsProgressBar->Increment();
+			}
 		}
-		else if (jvReadReturnCode == -1) {
-			jvGetsProgressBar->Increment();
-			continue;
-		}
-		else if (jvReadReturnCode == 0) {
-			jvGetsProgressBar->Increment();
-			Console::WriteLine();
-			break;
-		}
-		int processResult = recordProcessor->ProcessRecord(buffer);
-		if (processResult == RecordProcessor::PROCESS_ERROR) {
-			Console::WriteLine();
-			Console::WriteLine("Error occured during process record.");
-			return false;
-		}
-		else if (processResult == RecordProcessor::PROCESS_SKIP) {
-			jvlink->JVSkip();
-			jvGetsProgressBar->Increment();
-		}
+	}
+	catch (Exception^ ex) {
+		Console::WriteLine();
+		Console::WriteLine("Error occured during data read: {0}", ex->Message);
+		return false;
 	}
 
 	jvlink->JVClose();
@@ -208,3 +212,17 @@ int DataLoader::WaitForDownloadCompletion(int downloadCount) {
 	return 0;
 }
 
+bool DataLoader::RollbackTransaction(NpgsqlTransaction^ transaction) {
+	if (transaction != nullptr) {
+		Console::Write("Attempting to rollback: ");
+		try {
+			transaction->Rollback();
+			Console::WriteLine("OK.");
+		}
+		catch (Exception^ rollbackEx) {
+			Console::WriteLine("failed: {0}", rollbackEx->Message);
+			return false;
+		}
+	}
+	return true;
+}

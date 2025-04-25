@@ -21,6 +21,7 @@ private:
 	bool ProcessChunk(JVOpenParams^);
 	int WaitForDownloadCompletion(int downloadCount);
 	bool InitializeDatabase();
+	bool RollbackTransaction(Npgsql::NpgsqlTransaction^ transaction);
 public:
 	DataLoader(AxJVDTLabLib::AxJVLink^);
 	bool Execute();

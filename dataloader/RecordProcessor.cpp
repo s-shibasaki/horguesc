@@ -17,15 +17,13 @@ bool RecordProcessor::Initialize() {
 			"creation_date DATE, "
 			"kaisai_date DATE, "
 			"keibajo_code CHAR(2), "
-			"kaisai_kai SMALLINT, "
-			"kaisai_nichime SMALLINT, "
 			"kyoso_bango SMALLINT, "
 			"kyori SMALLINT, "
 			"track_code CHAR(2), "
 			"course_kubun CHAR(2), "
 			"tenko_code CHAR(1), "
 			"babajotai_code CHAR(1), "
-			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango))";
+			"PRIMARY KEY (kaisai_date, keibajo_code, kyoso_bango))";
 		command->ExecuteNonQuery();
 
 		command->CommandText =
@@ -34,8 +32,6 @@ bool RecordProcessor::Initialize() {
 			"creation_date DATE, "
 			"kaisai_date DATE, "
 			"keibajo_code CHAR(2), "
-			"kaisai_kai SMALLINT, "
-			"kaisai_nichime SMALLINT, "
 			"kyoso_bango SMALLINT, "
 			"wakuban SMALLINT, "
 			"umaban SMALLINT, "
@@ -49,7 +45,7 @@ bool RecordProcessor::Initialize() {
 			"ijo_kubun_code CHAR(1), "
 			"kakutei_chakujun SMALLINT, "
 			"soha_time SMALLINT, "
-			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kyoso_bango, "
 			"umaban, ketto_toroku_bango))";
 		command->ExecuteNonQuery();
 
@@ -122,42 +118,64 @@ int RecordProcessor::ProcessRaRecord(String^ record) {
 	try {
 		NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
 
-		DateTime^ creationDate = DateTime::ParseExact(record->Substring(3, 8), "yyyyMMdd", nullptr);
-		String^ trackCode = record->Substring(705, 2);
-		Int16 trackCodeInt = Int16::Parse(trackCode);
-
 		command->Parameters->AddWithValue("@data_type", record->Substring(2, 1));
+
+		DateTime^ creationDate = DateTime::ParseExact(record->Substring(3, 8), "yyyyMMdd", nullptr);
 		command->Parameters->AddWithValue("@creation_date", creationDate);
+
 		command->Parameters->AddWithValue("@kaisai_date", DateTime::ParseExact(record->Substring(11, 8), "yyyyMMdd", nullptr));
 		command->Parameters->AddWithValue("@keibajo_code", record->Substring(19, 2));
-		command->Parameters->AddWithValue("@kaisai_kai", Int16::Parse(record->Substring(21, 2)));
-		command->Parameters->AddWithValue("@kaisai_nichime", Int16::Parse(record->Substring(23, 2)));
 		command->Parameters->AddWithValue("@kyoso_bango", Int16::Parse(record->Substring(25, 2)));
-		command->Parameters->AddWithValue("@kyori", Int16::Parse(record->Substring(697, 4)));
-		command->Parameters->AddWithValue("@track_code", trackCode);
-		command->Parameters->AddWithValue("@course_kubun", record->Substring(709, 2));
-		command->Parameters->AddWithValue("@tenko_code", record->Substring(887, 1));
-		if ((23 <= trackCodeInt && trackCodeInt <= 29) || trackCodeInt == 52)
-			command->Parameters->AddWithValue("@babajotai_code", record->Substring(889, 1));
+
+		Int16 kyori = Int16::Parse(record->Substring(697, 4));
+		if (kyori > 0)
+			command->Parameters->AddWithValue("@kyori", kyori);
 		else
-			command->Parameters->AddWithValue("@babajotai_code", record->Substring(888, 1));
+			command->Parameters->AddWithValue("@kyori", DBNull::Value);
+
+		String^ trackCode = record->Substring(705, 2);
+		if (trackCode != "00")
+			command->Parameters->AddWithValue("@track_code", trackCode);
+		else
+			command->Parameters->AddWithValue("@track_code", DBNull::Value);
+
+		String^ courseKubun = record->Substring(709, 2);
+		if (courseKubun != "  ")
+			command->Parameters->AddWithValue("@course_kubun", courseKubun);
+		else
+			command->Parameters->AddWithValue("@course_kubun", DBNull::Value);
+
+		String^ tenkoCode = record->Substring(887, 1);
+		if (tenkoCode != "0")
+			command->Parameters->AddWithValue("@tenko_code", tenkoCode);
+		else
+			command->Parameters->AddWithValue("@tenko_code", DBNull::Value);
+
+		Int16 trackCodeInt = Int16::Parse(trackCode);
+		String^ babajotaiCode = "0";
+		if ((10 <= trackCodeInt && trackCodeInt <= 22) || trackCodeInt == 51 || (53 <= trackCodeInt && trackCodeInt <= 59))
+			babajotaiCode = record->Substring(888, 1);
+		else if ((23 <= trackCodeInt && trackCodeInt <= 29) || trackCodeInt == 52)
+			babajotaiCode = record->Substring(889, 1);
+		if (babajotaiCode != "0")
+			command->Parameters->AddWithValue("@babajotai_code", babajotaiCode);
+		else
+			command->Parameters->AddWithValue("@babajotai_code", DBNull::Value);
 
 		// 既存のレコードがあるか確認
 		command->CommandText = "SELECT creation_date FROM ra WHERE "
 			"kaisai_date = @kaisai_date AND "
 			"keibajo_code = @keibajo_code AND "
-			"kaisai_kai = @kaisai_kai AND "
-			"kaisai_nichime = @kaisai_nichime AND "
 			"kyoso_bango = @kyoso_bango";
 		Object^ existingCreationDateObj = command->ExecuteScalar();
 
 		// 既存のレコードがない場合は挿入して終了
 		if (existingCreationDateObj == nullptr) {
 			command->CommandText = "INSERT INTO ra (data_type, creation_date, "
-				"kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, "
+				"kaisai_date, keibajo_code, kyoso_bango, "
 				"kyori, track_code, course_kubun, tenko_code, babajotai_code) "
 				"VALUES (@data_type, @creation_date, "
-				"@kaisai_date, @keibajo_code, @kaisai_kai, @kaisai_nichime, @kyoso_bango, "
+				"@kaisai_date, @keibajo_code, @kyoso_bango, "
 				"@kyori, @track_code, @course_kubun, @tenko_code, @babajotai_code)";
 			command->ExecuteNonQuery();
 			return PROCESS_SUCCESS;
@@ -181,8 +199,6 @@ int RecordProcessor::ProcessRaRecord(String^ record) {
 			"babajotai_code = @babajotai_code "
 			"WHERE kaisai_date = @kaisai_date "
 			"AND keibajo_code = @keibajo_code "
-			"AND kaisai_kai = @kaisai_kai "
-			"AND kaisai_nichime = @kaisai_nichime "
 			"AND kyoso_bango = @kyoso_bango";
 		command->ExecuteNonQuery();
 		return PROCESS_SUCCESS;
@@ -198,47 +214,91 @@ int RecordProcessor::ProcessSeRecord(String^ record) {
 	try {
 		NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
 
-		DateTime^ creationDate = DateTime::ParseExact(record->Substring(3, 8), "yyyyMMdd", nullptr);
-
 		command->Parameters->AddWithValue("@data_type", record->Substring(2, 1));
+
+		DateTime^ creationDate = DateTime::ParseExact(record->Substring(3, 8), "yyyyMMdd", nullptr);
 		command->Parameters->AddWithValue("@creation_date", creationDate);
+
 		command->Parameters->AddWithValue("@kaisai_date", DateTime::ParseExact(record->Substring(11, 8), "yyyyMMdd", nullptr));
 		command->Parameters->AddWithValue("@keibajo_code", record->Substring(19, 2));
-		command->Parameters->AddWithValue("@kaisai_kai", Int16::Parse(record->Substring(21, 2)));
-		command->Parameters->AddWithValue("@kaisai_nichime", Int16::Parse(record->Substring(23, 2)));
 		command->Parameters->AddWithValue("@kyoso_bango", Int16::Parse(record->Substring(25, 2)));
-		command->Parameters->AddWithValue("@wakuban", Int16::Parse(record->Substring(27, 1)));
+
+		Int16 wakuban = Int16::Parse(record->Substring(27, 1));
+		if (wakuban > 0)
+			command->Parameters->AddWithValue("@wakuban", wakuban);
+		else
+			command->Parameters->AddWithValue("@wakuban", DBNull::Value);
+
 		command->Parameters->AddWithValue("@umaban", Int16::Parse(record->Substring(28, 2)));
-		command->Parameters->AddWithValue("@ketto_toroku_bango", Int64::Parse(record->Substring(30, 10)));
-		command->Parameters->AddWithValue("@futan_juryo", Int16::Parse(record->Substring(82, 2)));
-		command->Parameters->AddWithValue("@blinker_shiyo_kubun", record->Substring(294, 1));
-		command->Parameters->AddWithValue("@kishu_code", Int32::Parse(record->Substring(296, 5)));
-		command->Parameters->AddWithValue("@kishu_minarai_code", record->Substring(322, 1));
 
-		command->Parameters->AddWithValue("@bataiju", DBNull::Value);
+		Int64 kettoTorokuBango = Int64::Parse(record->Substring(30, 10));
+		if (kettoTorokuBango > 0)
+			command->Parameters->AddWithValue("@ketto_toroku_bango", kettoTorokuBango);
+		else
+			command->Parameters->AddWithValue("@ketto_toroku_bango", DBNull::Value);
+
+		Int16 futanJuryo = Int16::Parse(record->Substring(288, 2));
+		if (futanJuryo > 0)
+			command->Parameters->AddWithValue("@futan_juryo", futanJuryo);
+		else
+			command->Parameters->AddWithValue("@futan_juryo", DBNull::Value);
+
+		String^ blinkerShiyoKubun = record->Substring(294, 1);
+		if (blinkerShiyoKubun != "0")
+			command->Parameters->AddWithValue("@blinker_shiyo_kubun", blinkerShiyoKubun);
+		else
+			command->Parameters->AddWithValue("@blinker_shiyo_kubun", DBNull::Value);
+
+		Int32 kishuCode = Int32::Parse(record->Substring(296, 5));
+		if (kishuCode > 0)
+			command->Parameters->AddWithValue("@kishu_code", kishuCode);
+		else
+			command->Parameters->AddWithValue("@kishu_code", DBNull::Value);
+
+		String^ kishuMinaraiCode = record->Substring(322, 1);
+		if (kishuMinaraiCode != "0")
+			command->Parameters->AddWithValue("@kishu_minarai_code", kishuMinaraiCode);
+		else
+			command->Parameters->AddWithValue("@kishu_minarai_code", DBNull::Value);
+
 		String^ bataijuStr = record->Substring(324, 3);
-		if (bataijuStr != "   ") {
-			Int16 bataiju = Int16::Parse(bataijuStr);
-			if (2 <= bataiju && bataiju <= 998)
-				command->Parameters->AddWithValue("@bataiju", bataiju);
-		}
+		Int16 bataiju = 0;
+		if (bataijuStr != "   ") 
+			bataiju = Int16::Parse(bataijuStr);
+		if (2 <= bataiju && bataiju <= 998)
+			command->Parameters->AddWithValue("@bataiju", bataiju);
+		else
+			command->Parameters->AddWithValue("@bataiju", DBNull::Value);
 
-		command->Parameters->AddWithValue("@zogensa", DBNull::Value);
 		String^ zogensaStr = record->Substring(327, 4);
 		if (zogensaStr != "    " && zogensaStr != " 999") 
 			command->Parameters->AddWithValue("@zogensa", Int16::Parse(zogensaStr));
+		else
+			command->Parameters->AddWithValue("@zogensa", DBNull::Value);
 
-		command->Parameters->AddWithValue("@ijo_kubun_code", record->Substring(331, 1));
-		command->Parameters->AddWithValue("@kakutei_chakujun", Int16::Parse(record->Substring(334, 2)));
-		command->Parameters->AddWithValue("@soha_time", Int16::Parse(record->Substring(338, 1)) * 600 + Int16::Parse(record->Substring(339, 3)));
+		String^ ijoKubunCode = record->Substring(331, 1);
+		if (ijoKubunCode != "0")
+			command->Parameters->AddWithValue("@ijo_kubun_code", ijoKubunCode);
+		else
+			command->Parameters->AddWithValue("@ijo_kubun_code", DBNull::Value);
+
+		Int16 kakuteiChakujun = Int16::Parse(record->Substring(334, 2));
+		if (kakuteiChakujun > 0)
+			command->Parameters->AddWithValue("@kakutei_chakujun", kakuteiChakujun);
+		else
+			command->Parameters->AddWithValue("@kakutei_chakujun", DBNull::Value);
+
+		Int16 sohaTime = Int16::Parse(record->Substring(338, 1)) * 600 + Int16::Parse(record->Substring(339, 3));
+		if (sohaTime > 0)
+			command->Parameters->AddWithValue("@soha_time", sohaTime);
+		else
+			command->Parameters->AddWithValue("@soha_time", DBNull::Value);
 
 		// 既存のレコードがあるか確認
 		command->CommandText =
 			"SELECT creation_date FROM se"
 			" WHERE kaisai_date = @kaisai_date"
 			" AND keibajo_code = @keibajo_code"
-			" AND kaisai_kai = @kaisai_kai"
-			" AND kaisai_nichime = @kaisai_nichime"
 			" AND kyoso_bango = @kyoso_bango"
 			" AND umaban = @umaban"
 			" AND ketto_toroku_bango = @ketto_toroku_bango";
@@ -248,12 +308,12 @@ int RecordProcessor::ProcessSeRecord(String^ record) {
 		if (existingCreationDateObj == nullptr) {
 			command->CommandText =
 				"INSERT INTO se (data_type, creation_date, "
-				"kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, "
+				"kaisai_date, keibajo_code, kyoso_bango, "
 				"wakuban, umaban, ketto_toroku_bango, "
 				"futan_juryo, blinker_shiyo_kubun, kishu_code, kishu_minarai_code, bataiju, zogensa, "
 				"ijo_kubun_code, kakutei_chakujun, soha_time"
 				") VALUES (@data_type, @creation_date, "
-				"@kaisai_date, @keibajo_code, @kaisai_kai, @kaisai_nichime, @kyoso_bango, "
+				"@kaisai_date, @keibajo_code, @kyoso_bango, "
 				"@wakuban, @umaban, @ketto_toroku_bango, "
 				"@futan_juryo, @blinker_shiyo_kubun, @kishu_code, @kishu_minarai_code, @bataiju, @zogensa, "
 				"@ijo_kubun_code, @kakutei_chakujun, @soha_time"
@@ -286,8 +346,6 @@ int RecordProcessor::ProcessSeRecord(String^ record) {
 			"soha_time = @soha_time "
 			"WHERE kaisai_date = @kaisai_date "
 			"AND keibajo_code = @keibajo_code "
-			"AND kaisai_kai = @kaisai_kai "
-			"AND kaisai_nichime = @kaisai_nichime "
 			"AND kyoso_bango = @kyoso_bango "
 			"AND umaban = @umaban "
 			"AND ketto_toroku_bango = @ketto_toroku_bango";

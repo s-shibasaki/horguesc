@@ -3,10 +3,10 @@ ref class RecordProcessor
 {
 private:
 	Npgsql::NpgsqlConnection^ connection;
-	int ProcessRaRecord(System::String^ record);
-	int ProcessSeRecord(System::String^ record);
-	int ProcessUmRecord(System::String^ record);
-	int ProcessHnRecord(System::String^ record);
+	int ProcessRARecord(System::String^ record);
+	int ProcessSERecord(System::String^ record);
+	int ProcessUMRecord(System::String^ record);
+	int ProcessHNRecord(System::String^ record);
 
 public:
 	static const int PROCESS_ERROR = -1;

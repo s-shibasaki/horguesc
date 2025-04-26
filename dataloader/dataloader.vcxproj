@@ -166,6 +166,10 @@
     <ClCompile Include="Program.cpp" />
     <ClCompile Include="ProgressBar.cpp" />
     <ClCompile Include="RecordProcessor.cpp" />
+    <ClCompile Include="RecordProcessor_HN.cpp" />
+    <ClCompile Include="RecordProcessor_RA.cpp" />
+    <ClCompile Include="RecordProcessor_SE.cpp" />
+    <ClCompile Include="RecordProcessor_UM.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Config.h" />

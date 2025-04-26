@@ -14,31 +14,16 @@ int RecordProcessor::ProcessRARecord(String^ record) {
 
 		command->Parameters->AddWithValue("@kaisai_date", DateTime::ParseExact(record->Substring(11, 8), "yyyyMMdd", nullptr));
 		command->Parameters->AddWithValue("@keibajo_code", record->Substring(19, 2));
+		command->Parameters->AddWithValue("@kaisai_kai", Int16::Parse(record->Substring(21, 2)));
+		command->Parameters->AddWithValue("@kaisai_nichime", Int16::Parse(record->Substring(23, 2)));
 		command->Parameters->AddWithValue("@kyoso_bango", Int16::Parse(record->Substring(25, 2)));
-
-		Int16 kyori = Int16::Parse(record->Substring(697, 4));
-		if (kyori > 0)
-			command->Parameters->AddWithValue("@kyori", kyori);
-		else
-			command->Parameters->AddWithValue("@kyori", DBNull::Value);
+		command->Parameters->AddWithValue("@kyori", Int16::Parse(record->Substring(697, 4)));
 
 		String^ trackCode = record->Substring(705, 2);
-		if (trackCode != "00")
-			command->Parameters->AddWithValue("@track_code", trackCode);
-		else
-			command->Parameters->AddWithValue("@track_code", DBNull::Value);
+		command->Parameters->AddWithValue("@track_code", trackCode);
 
-		String^ courseKubun = record->Substring(709, 2);
-		if (courseKubun != "  ")
-			command->Parameters->AddWithValue("@course_kubun", courseKubun);
-		else
-			command->Parameters->AddWithValue("@course_kubun", DBNull::Value);
-
-		String^ tenkoCode = record->Substring(887, 1);
-		if (tenkoCode != "0")
-			command->Parameters->AddWithValue("@tenko_code", tenkoCode);
-		else
-			command->Parameters->AddWithValue("@tenko_code", DBNull::Value);
+		command->Parameters->AddWithValue("@course_kubun", record->Substring(709, 2));
+		command->Parameters->AddWithValue("@tenko_code", record->Substring(887, 1));
 
 		Int16 trackCodeInt = Int16::Parse(trackCode);
 		String^ babajotaiCode = "0";
@@ -46,25 +31,24 @@ int RecordProcessor::ProcessRARecord(String^ record) {
 			babajotaiCode = record->Substring(888, 1);
 		else if ((23 <= trackCodeInt && trackCodeInt <= 29) || trackCodeInt == 52)
 			babajotaiCode = record->Substring(889, 1);
-		if (babajotaiCode != "0")
-			command->Parameters->AddWithValue("@babajotai_code", babajotaiCode);
-		else
-			command->Parameters->AddWithValue("@babajotai_code", DBNull::Value);
+		command->Parameters->AddWithValue("@babajotai_code", babajotaiCode);
 
 		// 既存のレコードがあるか確認
 		command->CommandText = "SELECT creation_date FROM ra WHERE "
 			"kaisai_date = @kaisai_date AND "
 			"keibajo_code = @keibajo_code AND "
+			"kaisai_kai = @kaisai_kai AND "
+			"kaisai_nichime = @kaisai_nichime AND "
 			"kyoso_bango = @kyoso_bango";
 		Object^ existingCreationDateObj = command->ExecuteScalar();
 
 		// 既存のレコードがない場合は挿入して終了
 		if (existingCreationDateObj == nullptr) {
 			command->CommandText = "INSERT INTO ra (data_type, creation_date, "
-				"kaisai_date, keibajo_code, kyoso_bango, "
+				"kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, "
 				"kyori, track_code, course_kubun, tenko_code, babajotai_code) "
 				"VALUES (@data_type, @creation_date, "
-				"@kaisai_date, @keibajo_code, @kyoso_bango, "
+				"@kaisai_date, @keibajo_code, @kaisai_kai, @kaisai_nichime, @kyoso_bango, "
 				"@kyori, @track_code, @course_kubun, @tenko_code, @babajotai_code)";
 			command->ExecuteNonQuery();
 			return PROCESS_SUCCESS;
@@ -88,6 +72,8 @@ int RecordProcessor::ProcessRARecord(String^ record) {
 			"babajotai_code = @babajotai_code "
 			"WHERE kaisai_date = @kaisai_date "
 			"AND keibajo_code = @keibajo_code "
+			"AND kaisai_kai = @kaisai_kai "
+			"AND kaisai_nichime = @kaisai_nichime "
 			"AND kyoso_bango = @kyoso_bango";
 		command->ExecuteNonQuery();
 		return PROCESS_SUCCESS;

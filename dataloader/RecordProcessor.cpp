@@ -13,29 +13,29 @@ bool RecordProcessor::Initialize() {
 
 		command->CommandText =
 			"CREATE TABLE IF NOT EXISTS ra ("
-			"id SERIAL PRIMARY KEY, "
 			"data_type CHAR(1), "
 			"creation_date DATE, "
 			"kaisai_date DATE, "
 			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
 			"kyoso_bango SMALLINT, "
 			"kyori SMALLINT, "
 			"track_code CHAR(2), "
 			"course_kubun CHAR(2), "
 			"tenko_code CHAR(1), "
-			"babajotai_code CHAR(1)); "
-			"ALTER TABLE ra DROP CONSTRAINT IF EXISTS ra_unique_constraint; "
-			"ALTER TABLE ra ADD CONSTRAINT ra_unique_constraint UNIQUE "
-			"(kaisai_date, keibajo_code, kyoso_bango)";
+			"babajotai_code CHAR(1), "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango))";
 		command->ExecuteNonQuery();
 
 		command->CommandText =
 			"CREATE TABLE IF NOT EXISTS se ("
-			"id SERIAL PRIMARY KEY, "
 			"data_type VARCHAR(1), "
 			"creation_date DATE, "
 			"kaisai_date DATE, "
 			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
 			"kyoso_bango SMALLINT, "
 			"wakuban SMALLINT, "
 			"umaban SMALLINT, "
@@ -48,15 +48,12 @@ bool RecordProcessor::Initialize() {
 			"zogensa SMALLINT, "
 			"ijo_kubun_code CHAR(1), "
 			"kakutei_chakujun SMALLINT, "
-			"soha_time SMALLINT); "
-			"ALTER TABLE se DROP CONSTRAINT IF EXISTS se_unique_constraint; "
-			"ALTER TABLE se ADD CONSTRAINT se_unique_constraint UNIQUE "
-			"(kaisai_date, keibajo_code, kyoso_bango, umaban, ketto_toroku_bango)";
+			"soha_time SMALLINT, "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kyoso_bango, umaban, ketto_toroku_bango))";
 		command->ExecuteNonQuery();
 
 		command->CommandText =
 			"CREATE TABLE IF NOT EXISTS um ("
-			"id SERIAL PRIMARY KEY, "
 			"data_type VARCHAR(1), "
 			"creation_date DATE, "
 			"ketto_toroku_bango BIGINT, "
@@ -76,22 +73,17 @@ bool RecordProcessor::Initialize() {
 			"hanshoku_toroku_bango_12 BIGINT, "
 			"hanshoku_toroku_bango_13 BIGINT, "
 			"hanshoku_toroku_bango_14 BIGINT, "
-			"chokyoshi_code INT); "
-			"ALTER TABLE um DROP CONSTRAINT IF EXISTS um_unique_constraint; "
-			"ALTER TABLE um ADD CONSTRAINT um_unique_constraint UNIQUE "
-			"(ketto_toroku_bango)";
+			"chokyoshi_code INT, "
+			"PRIMARY KEY (ketto_toroku_bango))";
 		command->ExecuteNonQuery();
 
 		command->CommandText =
 			"CREATE TABLE IF NOT EXISTS hn ("
-			"id SERIAL PRIMARY KEY, "
 			"data_type VARCHAR(1), "
 			"creation_date DATE, "
 			"hanshoku_toroku_bango BIGINT, "
-			"ketto_toroku_bango BIGINT); "
-			"ALTER TABLE hn DROP CONSTRAINT IF EXISTS hn_unique_constraint; "
-			"ALTER TABLE hn ADD CONSTRAINT hn_unique_constraint UNIQUE "
-			"(hanshoku_toroku_bango)";
+			"ketto_toroku_bango BIGINT, "
+			"PRIMARY KEY (hanshoku_toroku_bango))";
 		command->ExecuteNonQuery();
 
 

@@ -37,10 +37,18 @@ bool RecordProcessor::Initialize() {
 			"kaisai_kai SMALLINT, "
 			"kaisai_nichime SMALLINT, "
 			"kyoso_bango SMALLINT, "
-			"wakuban INT, "
-			"umaban INT, "
+			"wakuban SMALLINT, "
+			"umaban SMALLINT, "
 			"ketto_toroku_bango BIGINT, "
-			"barei INT, "
+			"futan_juryo SMALLINT, "
+			"blinker_shiyo_kubun CHAR(1), "
+			"kishu_code INT, "
+			"kishu_minarai_code CHAR(1), "
+			"bataiju SMALLINT, "
+			"zogensa SMALLINT, "
+			"ijo_kubun_code CHAR(1), "
+			"kakutei_chakujun SMALLINT, "
+			"soha_time SMALLINT, "
 			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, "
 			"umaban, ketto_toroku_bango))";
 		command->ExecuteNonQuery();
@@ -79,54 +87,6 @@ bool RecordProcessor::Initialize() {
 			"PRIMARY KEY (hanshoku_toroku_bango))";
 		command->ExecuteNonQuery();
 
-		command->CommandText =
-			"ALTER TABLE se ADD CONSTRAINT fk_ra "
-			"FOREIGN KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango) "
-			"REFERENCES ra(kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango) "
-			"DEFERRABLE INITIALLY DEFERRED; "
-
-			"ALTER TABLE se ADD CONSTRAINT fk_um "
-			"FOREIGN KEY (ketto_toroku_bango) "
-			"REFERENCES um(ketto_toroku_bango) "
-			"DEFERRABLE INITIALLY DEFERRED";
-		command->ExecuteNonQuery();
-
-		command->CommandText =
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_01 "
-			"FOREIGN KEY (hanshoku_toroku_bango_01) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED; "
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_02 "
-			"FOREIGN KEY (hanshoku_toroku_bango_02) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED; "
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_03 "
-			"FOREIGN KEY (hanshoku_toroku_bango_03) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED; "
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_04 "
-			"FOREIGN KEY (hanshoku_toroku_bango_04) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED; "
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_05 "
-			"FOREIGN KEY (hanshoku_toroku_bango_05) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED; "
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_06 "
-			"FOREIGN KEY (hanshoku_toroku_bango_06) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED; "
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_07 "
-			"FOREIGN KEY (hanshoku_toroku_bango_07) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED; "
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_08 "
-			"FOREIGN KEY (hanshoku_toroku_bango_08) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED; "
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_09 "
-			"FOREIGN KEY (hanshoku_toroku_bango_09) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED; "
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_10 "
-			"FOREIGN KEY (hanshoku_toroku_bango_10) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED; "
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_11 "
-			"FOREIGN KEY (hanshoku_toroku_bango_11) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED; "
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_12 "
-			"FOREIGN KEY (hanshoku_toroku_bango_12) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED; "
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_13 "
-			"FOREIGN KEY (hanshoku_toroku_bango_13) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED; "
-			"ALTER TABLE um ADD CONSTRAINT fk_hn_14 "
-			"FOREIGN KEY (hanshoku_toroku_bango_14) REFERENCES hn(hanshoku_toroku_bango) DEFERRABLE INITIALLY DEFERRED";
-		command->ExecuteNonQuery();
-
-		command->CommandText =
-			"ALTER TABLE hn ADD CONSTRAINT fk_um "
-			"FOREIGN KEY (ketto_toroku_bango) REFERENCES um(ketto_toroku_bango) DEFERRABLE INITIALLY DEFERRED";
-		command->ExecuteNonQuery();
-
 		return true;
 	}
 	catch (Exception^ ex) {
@@ -147,6 +107,8 @@ int RecordProcessor::ProcessRecord(String^ record) {
 			result = ProcessSeRecord(record);
 		else if (recordTypeId == "UM")
 			result = ProcessUmRecord(record);
+		else if (recordTypeId == "HN")
+			result = ProcessHnRecord(record);
 
 		return result;
 	}
@@ -160,28 +122,25 @@ int RecordProcessor::ProcessRaRecord(String^ record) {
 	try {
 		NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
 
-		String^ dataType = record->Substring(2, 1);
 		DateTime^ creationDate = DateTime::ParseExact(record->Substring(3, 8), "yyyyMMdd", nullptr);
-		DateTime^ kaisaiDate = DateTime::ParseExact(record->Substring(11, 8), "yyyyMMdd", nullptr);
-		String^ keibajoCode = record->Substring(19, 2);
-		int kaisaiKai = Int32::Parse(record->Substring(21, 2));
-		int kaisaiNichime = Int32::Parse(record->Substring(23, 2));
-		int kyosoBango = Int32::Parse(record->Substring(25, 2));
-		int kyori = Int32::Parse(record->Substring(697, 4));
 		String^ trackCode = record->Substring(705, 2);
-		String^ courseKubun = record->Substring(709, 2);
-		String^ tenkoCode = record->Substring(887, 1);
-		String^ babajotaiCode;
-		int trackCodeInt = Int32::Parse(trackCode);
+		Int16 trackCodeInt = Int16::Parse(trackCode);
+
+		command->Parameters->AddWithValue("@data_type", record->Substring(2, 1));
+		command->Parameters->AddWithValue("@creation_date", creationDate);
+		command->Parameters->AddWithValue("@kaisai_date", DateTime::ParseExact(record->Substring(11, 8), "yyyyMMdd", nullptr));
+		command->Parameters->AddWithValue("@keibajo_code", record->Substring(19, 2));
+		command->Parameters->AddWithValue("@kaisai_kai", Int16::Parse(record->Substring(21, 2)));
+		command->Parameters->AddWithValue("@kaisai_nichime", Int16::Parse(record->Substring(23, 2)));
+		command->Parameters->AddWithValue("@kyoso_bango", Int16::Parse(record->Substring(25, 2)));
+		command->Parameters->AddWithValue("@kyori", Int16::Parse(record->Substring(697, 4)));
+		command->Parameters->AddWithValue("@track_code", trackCode);
+		command->Parameters->AddWithValue("@course_kubun", record->Substring(709, 2));
+		command->Parameters->AddWithValue("@tenko_code", record->Substring(887, 1));
 		if ((23 <= trackCodeInt && trackCodeInt <= 29) || trackCodeInt == 52)
-			babajotaiCode = record->Substring(889, 1);
-		else if ((10 <= trackCodeInt && trackCodeInt <= 22) || (51 <= trackCodeInt && trackCodeInt <= 59))
-			babajotaiCode = record->Substring(888, 1);
-		else {
-			Console::WriteLine();
-			Console::WriteLine("Invalid trackCode: {0}", trackCode);
-			return PROCESS_ERROR;
-		}
+			command->Parameters->AddWithValue("@babajotai_code", record->Substring(889, 1));
+		else
+			command->Parameters->AddWithValue("@babajotai_code", record->Substring(888, 1));
 
 		// 既存のレコードがあるか確認
 		command->CommandText = "SELECT creation_date FROM ra WHERE "
@@ -190,12 +149,6 @@ int RecordProcessor::ProcessRaRecord(String^ record) {
 			"kaisai_kai = @kaisai_kai AND "
 			"kaisai_nichime = @kaisai_nichime AND "
 			"kyoso_bango = @kyoso_bango";
-		command->Parameters->Clear();
-		command->Parameters->AddWithValue("@kaisai_date", kaisaiDate);
-		command->Parameters->AddWithValue("@keibajo_code", keibajoCode);
-		command->Parameters->AddWithValue("@kaisai_kai", kaisaiKai);
-		command->Parameters->AddWithValue("@kaisai_nichime", kaisaiNichime);
-		command->Parameters->AddWithValue("@kyoso_bango", kyosoBango);
 		Object^ existingCreationDateObj = command->ExecuteScalar();
 
 		// 既存のレコードがない場合は挿入して終了
@@ -206,19 +159,6 @@ int RecordProcessor::ProcessRaRecord(String^ record) {
 				"VALUES (@data_type, @creation_date, "
 				"@kaisai_date, @keibajo_code, @kaisai_kai, @kaisai_nichime, @kyoso_bango, "
 				"@kyori, @track_code, @course_kubun, @tenko_code, @babajotai_code)";
-			command->Parameters->Clear();
-			command->Parameters->AddWithValue("@data_type", dataType);
-			command->Parameters->AddWithValue("@creation_date", creationDate);
-			command->Parameters->AddWithValue("@kaisai_date", kaisaiDate);
-			command->Parameters->AddWithValue("@keibajo_code", keibajoCode);
-			command->Parameters->AddWithValue("@kaisai_kai", kaisaiKai);
-			command->Parameters->AddWithValue("@kaisai_nichime", kaisaiNichime);
-			command->Parameters->AddWithValue("@kyoso_bango", kyosoBango);
-			command->Parameters->AddWithValue("@kyori", kyori);
-			command->Parameters->AddWithValue("@track_code", trackCode);
-			command->Parameters->AddWithValue("@course_kubun", courseKubun);
-			command->Parameters->AddWithValue("@tenko_code", tenkoCode);
-			command->Parameters->AddWithValue("@babajotai_code", babajotaiCode);
 			command->ExecuteNonQuery();
 			return PROCESS_SUCCESS;
 		}
@@ -244,19 +184,6 @@ int RecordProcessor::ProcessRaRecord(String^ record) {
 			"AND kaisai_kai = @kaisai_kai "
 			"AND kaisai_nichime = @kaisai_nichime "
 			"AND kyoso_bango = @kyoso_bango";
-		command->Parameters->Clear();
-		command->Parameters->AddWithValue("@data_type", dataType);
-		command->Parameters->AddWithValue("@creation_date", creationDate);
-		command->Parameters->AddWithValue("@kyori", kyori);
-		command->Parameters->AddWithValue("@track_code", trackCode);
-		command->Parameters->AddWithValue("@course_kubun", courseKubun);
-		command->Parameters->AddWithValue("@tenko_code", tenkoCode);
-		command->Parameters->AddWithValue("@babajotai_code", babajotaiCode);
-		command->Parameters->AddWithValue("@kaisai_date", kaisaiDate);
-		command->Parameters->AddWithValue("@keibajo_code", keibajoCode);
-		command->Parameters->AddWithValue("@kaisai_kai", kaisaiKai);
-		command->Parameters->AddWithValue("@kaisai_nichime", kaisaiNichime);
-		command->Parameters->AddWithValue("@kyoso_bango", kyosoBango);
 		command->ExecuteNonQuery();
 		return PROCESS_SUCCESS;
 	}
@@ -270,19 +197,40 @@ int RecordProcessor::ProcessRaRecord(String^ record) {
 int RecordProcessor::ProcessSeRecord(String^ record) {
 	try {
 		NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
-		NpgsqlDataReader^ reader;
 
-		String^ dataType = record->Substring(2, 1);
 		DateTime^ creationDate = DateTime::ParseExact(record->Substring(3, 8), "yyyyMMdd", nullptr);
-		DateTime^ kaisaiDate = DateTime::ParseExact(record->Substring(11, 8), "yyyyMMdd", nullptr);
-		String^ keibajoCode = record->Substring(19, 2);
-		int kaisaiKai = Int32::Parse(record->Substring(21, 2));
-		int kaisaiNichime = Int32::Parse(record->Substring(23, 2));
-		int kyosoBango = Int32::Parse(record->Substring(25, 2));
-		int wakuban = Int32::Parse(record->Substring(27, 1));
-		int umaban = Int32::Parse(record->Substring(28, 2));
-		int kettoTorokuBango = Int64::Parse(record->Substring(30, 10));
-		int barei = Int32::Parse(record->Substring(82, 2));
+
+		command->Parameters->AddWithValue("@data_type", record->Substring(2, 1));
+		command->Parameters->AddWithValue("@creation_date", creationDate);
+		command->Parameters->AddWithValue("@kaisai_date", DateTime::ParseExact(record->Substring(11, 8), "yyyyMMdd", nullptr));
+		command->Parameters->AddWithValue("@keibajo_code", record->Substring(19, 2));
+		command->Parameters->AddWithValue("@kaisai_kai", Int16::Parse(record->Substring(21, 2)));
+		command->Parameters->AddWithValue("@kaisai_nichime", Int16::Parse(record->Substring(23, 2)));
+		command->Parameters->AddWithValue("@kyoso_bango", Int16::Parse(record->Substring(25, 2)));
+		command->Parameters->AddWithValue("@wakuban", Int16::Parse(record->Substring(27, 1)));
+		command->Parameters->AddWithValue("@umaban", Int16::Parse(record->Substring(28, 2)));
+		command->Parameters->AddWithValue("@ketto_toroku_bango", Int64::Parse(record->Substring(30, 10)));
+		command->Parameters->AddWithValue("@futan_juryo", Int16::Parse(record->Substring(82, 2)));
+		command->Parameters->AddWithValue("@blinker_shiyo_kubun", record->Substring(294, 1));
+		command->Parameters->AddWithValue("@kishu_code", Int32::Parse(record->Substring(296, 5)));
+		command->Parameters->AddWithValue("@kishu_minarai_code", record->Substring(322, 1));
+
+		command->Parameters->AddWithValue("@bataiju", DBNull::Value);
+		String^ bataijuStr = record->Substring(324, 3);
+		if (bataijuStr != "   ") {
+			Int16 bataiju = Int16::Parse(bataijuStr);
+			if (2 <= bataiju && bataiju <= 998)
+				command->Parameters->AddWithValue("@bataiju", bataiju);
+		}
+
+		command->Parameters->AddWithValue("@zogensa", DBNull::Value);
+		String^ zogensaStr = record->Substring(327, 4);
+		if (zogensaStr != "    " && zogensaStr != " 999") 
+			command->Parameters->AddWithValue("@zogensa", Int16::Parse(zogensaStr));
+
+		command->Parameters->AddWithValue("@ijo_kubun_code", record->Substring(331, 1));
+		command->Parameters->AddWithValue("@kakutei_chakujun", Int16::Parse(record->Substring(334, 2)));
+		command->Parameters->AddWithValue("@soha_time", Int16::Parse(record->Substring(338, 1)) * 600 + Int16::Parse(record->Substring(339, 3)));
 
 		// 既存のレコードがあるか確認
 		command->CommandText =
@@ -294,14 +242,6 @@ int RecordProcessor::ProcessSeRecord(String^ record) {
 			" AND kyoso_bango = @kyoso_bango"
 			" AND umaban = @umaban"
 			" AND ketto_toroku_bango = @ketto_toroku_bango";
-		command->Parameters->Clear();
-		command->Parameters->AddWithValue("@kaisai_date", kaisaiDate);
-		command->Parameters->AddWithValue("@keibajo_code", keibajoCode);
-		command->Parameters->AddWithValue("@kaisai_kai", kaisaiKai);
-		command->Parameters->AddWithValue("@kaisai_nichime", kaisaiNichime);
-		command->Parameters->AddWithValue("@kyoso_bango", kyosoBango);
-		command->Parameters->AddWithValue("@umaban", umaban);
-		command->Parameters->AddWithValue("@ketto_toroku_bango", kettoTorokuBango);
 		Object^ existingCreationDateObj = command->ExecuteScalar();
 
 		// 既存のレコードがない場合は挿入して終了
@@ -310,24 +250,14 @@ int RecordProcessor::ProcessSeRecord(String^ record) {
 				"INSERT INTO se (data_type, creation_date, "
 				"kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, "
 				"wakuban, umaban, ketto_toroku_bango, "
-				"barei"
+				"futan_juryo, blinker_shiyo_kubun, kishu_code, kishu_minarai_code, bataiju, zogensa, "
+				"ijo_kubun_code, kakutei_chakujun, soha_time"
 				") VALUES (@data_type, @creation_date, "
 				"@kaisai_date, @keibajo_code, @kaisai_kai, @kaisai_nichime, @kyoso_bango, "
 				"@wakuban, @umaban, @ketto_toroku_bango, "
-				"@barei"
+				"@futan_juryo, @blinker_shiyo_kubun, @kishu_code, @kishu_minarai_code, @bataiju, @zogensa, "
+				"@ijo_kubun_code, @kakutei_chakujun, @soha_time"
 				")";
-			command->Parameters->Clear();
-			command->Parameters->AddWithValue("@data_type", dataType);
-			command->Parameters->AddWithValue("@creation_date", creationDate);
-			command->Parameters->AddWithValue("@kaisai_date", kaisaiDate);
-			command->Parameters->AddWithValue("@keibajo_code", keibajoCode);
-			command->Parameters->AddWithValue("@kaisai_kai", kaisaiKai);
-			command->Parameters->AddWithValue("@kaisai_nichime", kaisaiNichime);
-			command->Parameters->AddWithValue("@kyoso_bango", kyosoBango);
-			command->Parameters->AddWithValue("@wakuban", wakuban);
-			command->Parameters->AddWithValue("@umaban", umaban);
-			command->Parameters->AddWithValue("@ketto_toroku_bango", kettoTorokuBango);
-			command->Parameters->AddWithValue("@barei", barei);
 			command->ExecuteNonQuery();
 			return PROCESS_SUCCESS;
 		}
@@ -345,7 +275,15 @@ int RecordProcessor::ProcessSeRecord(String^ record) {
 			"data_type = @data_type, "
 			"creation_date = @creation_date, "
 			"wakuban = @wakuban, "
-			"barei = @barei "
+			"futan_juryo = @futan_juryo, "
+			"blinker_shiyo_kubun = @blinker_shiyo_kubun, "
+			"kishu_code = @kishu_code, "
+			"kishu_minarai_code = @kishu_minarai_code, "
+			"bataiju = @bataiju, "
+			"zogensa = @zogensa, "
+			"ijo_kubun_code = @ijo_kubun_code, "
+			"kakutei_chakujun = @kakutei_chakujun, "
+			"soha_time = @soha_time "
 			"WHERE kaisai_date = @kaisai_date "
 			"AND keibajo_code = @keibajo_code "
 			"AND kaisai_kai = @kaisai_kai "
@@ -353,28 +291,20 @@ int RecordProcessor::ProcessSeRecord(String^ record) {
 			"AND kyoso_bango = @kyoso_bango "
 			"AND umaban = @umaban "
 			"AND ketto_toroku_bango = @ketto_toroku_bango";
-		command->Parameters->Clear();
-		command->Parameters->AddWithValue("@data_type", dataType);
-		command->Parameters->AddWithValue("@creation_date", creationDate);
-		command->Parameters->AddWithValue("@wakuban", wakuban);
-		command->Parameters->AddWithValue("@barei", barei);
-		command->Parameters->AddWithValue("@kaisai_date", kaisaiDate);
-		command->Parameters->AddWithValue("@keibajo_code", keibajoCode);
-		command->Parameters->AddWithValue("@kaisai_kai", kaisaiKai);
-		command->Parameters->AddWithValue("@kaisai_nichime", kaisaiNichime);
-		command->Parameters->AddWithValue("@kyoso_bango", kyosoBango);
-		command->Parameters->AddWithValue("@umaban", umaban);
-		command->Parameters->AddWithValue("@ketto_toroku_bango", kettoTorokuBango);
 		command->ExecuteNonQuery();
 		return PROCESS_SUCCESS;
 	}
 	catch (Exception^ ex) {
 		Console::WriteLine();
-		Console::WriteLine("Error processing RA record: {0}", ex->Message);
+		Console::WriteLine("Error processing SE record: {0}", ex->Message);
 		return PROCESS_ERROR;
 	}
 }
 
 int RecordProcessor::ProcessUmRecord(String^ record) {
+	return PROCESS_SUCCESS;
+}
+
+int RecordProcessor::ProcessHnRecord(String^ record) {
 	return PROCESS_SUCCESS;
 }

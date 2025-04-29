@@ -1,4 +1,4 @@
-#include "RecordProcessor.h"
+﻿#include "RecordProcessor.h"
 
 using namespace System;
 using namespace Npgsql;
@@ -75,7 +75,13 @@ bool RecordProcessor::Initialize() {
 			"PRIMARY KEY (hanshoku_toroku_bango))";
 		command->ExecuteNonQuery();
 
-
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS ch ("
+			"data_type VARCHAR(1), "
+			"creation_date DATE, "
+			"chokyoshi_code INT, "
+			"PRIMARY KEY (chokyoshi_code))";
+		command->ExecuteNonQuery();
 
 		return true;
 	}
@@ -89,18 +95,18 @@ bool RecordProcessor::Initialize() {
 int RecordProcessor::ProcessRecord(array<Byte>^ record) {
 	try {
 		String^ recordTypeId = ByteSubstring(record, 0, 2);
-		int result = PROCESS_SKIP;
-
 		if (recordTypeId == "RA")
-			result = ProcessRARecord(record);
+			return ProcessRARecord(record);
 		else if (recordTypeId == "SE")
-			result = ProcessSERecord(record);
+			return ProcessSERecord(record);
 		else if (recordTypeId == "UM")
-			result = ProcessUMRecord(record);
+			return ProcessUMRecord(record);
 		else if (recordTypeId == "HN")
-			result = ProcessHNRecord(record);
-
-		return result;
+			return ProcessHNRecord(record);
+		else if (recordTypeId == "CH")
+			return ProcessCHRecord(record);
+		else
+			return PROCESS_SKIP; // Unknown record type, skip it
 	}
 	catch (Exception^ ex) {
 		Console::WriteLine();

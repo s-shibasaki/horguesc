@@ -7,6 +7,7 @@ private:
 	int ProcessSERecord(array<System::Byte>^ record);
 	int ProcessUMRecord(array<System::Byte>^ record);
 	int ProcessHNRecord(array<System::Byte>^ record);
+	int ProcessCHRecord(array<System::Byte>^ record);
 	System::String^ ByteSubstring(array<System::Byte>^ bytes, int byteStartIndex, int byteLength);
 
 public:

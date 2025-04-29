@@ -58,21 +58,10 @@ bool RecordProcessor::Initialize() {
 			"creation_date DATE, "
 			"ketto_toroku_bango BIGINT, "
 			"birth_date DATE, "
-			"seibetsu_code CHAR(1), "
-			"hanshoku_toroku_bango_01 BIGINT, "
-			"hanshoku_toroku_bango_02 BIGINT, "
-			"hanshoku_toroku_bango_03 BIGINT, "
-			"hanshoku_toroku_bango_04 BIGINT, "
-			"hanshoku_toroku_bango_05 BIGINT, "
-			"hanshoku_toroku_bango_06 BIGINT, "
-			"hanshoku_toroku_bango_07 BIGINT, "
-			"hanshoku_toroku_bango_08 BIGINT, "
-			"hanshoku_toroku_bango_09 BIGINT, "
-			"hanshoku_toroku_bango_10 BIGINT, "
-			"hanshoku_toroku_bango_11 BIGINT, "
-			"hanshoku_toroku_bango_12 BIGINT, "
-			"hanshoku_toroku_bango_13 BIGINT, "
-			"hanshoku_toroku_bango_14 BIGINT, "
+			"seibetsu_code CHAR(1), ";
+		for (int i = 1; i <= 14; i++) 
+			command->CommandText += String::Format("hanshoku_toroku_bango_{0:00} BIGINT, ", i);
+		command->CommandText += 
 			"chokyoshi_code INT, "
 			"PRIMARY KEY (ketto_toroku_bango))";
 		command->ExecuteNonQuery();

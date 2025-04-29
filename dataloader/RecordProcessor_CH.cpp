@@ -41,7 +41,7 @@ int RecordProcessor::ProcessCHRecord(array<Byte>^ record) {
 		command->CommandText =
 			"UPDATE ch SET "
 			"data_type = @data_type, "
-			"creation_date = @creation_date, "
+			"creation_date = @creation_date "
 			"WHERE chokyoshi_code = @chokyoshi_code";
 		command->ExecuteNonQuery();
 		return PROCESS_SUCCESS;

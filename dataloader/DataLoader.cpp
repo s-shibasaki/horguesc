@@ -47,7 +47,7 @@ bool DataLoader::InitializeDatabase() {
 		connection->Open();
 		Console::WriteLine("OK.");
 
-		// ‹¤—L‚·‚é•Ï”
+		// å…±æœ‰ã™ã‚‹å¤‰æ•°
 		NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
 		Object^ result;
 
@@ -58,14 +58,14 @@ bool DataLoader::InitializeDatabase() {
 		result = command->ExecuteScalar();
 
 		if (result != nullptr) {
-			// ƒf[ƒ^ƒx[ƒX‚ª‘¶İ‚µ‚½
+			// ãƒ‡ãƒ¼ã‚¿ãƒ™ãƒ¼ã‚¹ãŒå­˜åœ¨ã—ãŸ
 			Console::WriteLine("exists.");
 
-			// ƒf[ƒ^ƒx[ƒX‚ğíœ‚µ‚È‚¢ê‡A‚±‚Ì‚Ü‚Ü”²‚¯‚é
+			// ãƒ‡ãƒ¼ã‚¿ãƒ™ãƒ¼ã‚¹ã‚’å‰Šé™¤ã—ãªã„å ´åˆã€ã“ã®ã¾ã¾æŠœã‘ã‚‹
 			if (!config->DeleteDatabase)
 				return true;
 
-			// íœ‚·‚éê‡
+			// å‰Šé™¤ã™ã‚‹å ´åˆ
 			Console::Write("Deleting database: ");
 			command->CommandText = String::Format("DROP DATABASE \"{0}\"", config->DbName);
 			command->Parameters->Clear();
@@ -73,11 +73,11 @@ bool DataLoader::InitializeDatabase() {
 			Console::WriteLine("OK.");
 		}
 		else {
-			// ƒf[ƒ^ƒx[ƒX‚ª‘¶İ‚µ‚È‚©‚Á‚½
+			// ãƒ‡ãƒ¼ã‚¿ãƒ™ãƒ¼ã‚¹ãŒå­˜åœ¨ã—ãªã‹ã£ãŸ
 			Console::WriteLine("does not exists.");
 		}
 
-		// ƒf[ƒ^ƒx[ƒXíœŒãA‚Ü‚½‚Í‘¶İ‚µ‚È‚©‚Á‚½ê‡
+		// ãƒ‡ãƒ¼ã‚¿ãƒ™ãƒ¼ã‚¹å‰Šé™¤å¾Œã€ã¾ãŸã¯å­˜åœ¨ã—ãªã‹ã£ãŸå ´åˆ
 		Console::Write("Creating new database: ");
 		command->CommandText = String::Format("CREATE DATABASE \"{0}\"", config->DbName);
 		command->Parameters->Clear();
@@ -172,9 +172,15 @@ bool DataLoader::ProcessChunk(JVOpenParams^ params) {
 				Console::WriteLine();
 				break;
 			}
-			int processResult = recordProcessor->ProcessRecord(buffer);
+
+			// Convert the string to CP932 byte array
+			array<Byte>^ bytes = System::Text::Encoding::GetEncoding(932)->GetBytes(buffer);
+
+			// Process the record
+			int processResult = recordProcessor->ProcessRecord(bytes);
+
 			if (processResult == RecordProcessor::PROCESS_ERROR) {
-				// RecordProcessor‚Å‰üsÏ‚İ
+				// RecordProcessorã§æ”¹è¡Œæ¸ˆã¿
 				Console::WriteLine("Error occured during process record.");
 				return false;
 			}

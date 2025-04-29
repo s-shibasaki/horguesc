@@ -4,43 +4,45 @@ using namespace System;
 using namespace Npgsql;
 
 
-int RecordProcessor::ProcessSERecord(String^ record) {
+int RecordProcessor::ProcessSERecord(array<Byte>^ record) {
 	try {
 		NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
 
-		command->Parameters->AddWithValue("@data_type", record->Substring(2, 1));
+		command->Parameters->AddWithValue("@data_type", ByteSubstring(record, 2, 1));
 
-		DateTime^ creationDate = DateTime::ParseExact(record->Substring(3, 8), "yyyyMMdd", nullptr);
+		DateTime^ creationDate = DateTime::ParseExact(ByteSubstring(record, 3, 8), "yyyyMMdd", nullptr);
 		command->Parameters->AddWithValue("@creation_date", creationDate);
 
-		command->Parameters->AddWithValue("@kaisai_date", DateTime::ParseExact(record->Substring(11, 8), "yyyyMMdd", nullptr));
-		command->Parameters->AddWithValue("@keibajo_code", record->Substring(19, 2));
-		command->Parameters->AddWithValue("@kaisai_kai", Int16::Parse(record->Substring(21, 2)));
-		command->Parameters->AddWithValue("@kaisai_nichime", Int16::Parse(record->Substring(23, 2)));
-		command->Parameters->AddWithValue("@kyoso_bango", Int16::Parse(record->Substring(25, 2)));
-		command->Parameters->AddWithValue("@wakuban", Int16::Parse(record->Substring(27, 1)));
-		command->Parameters->AddWithValue("@umaban", Int16::Parse(record->Substring(28, 2)));
-		command->Parameters->AddWithValue("@ketto_toroku_bango", Int64::Parse(record->Substring(30, 10)));
-		command->Parameters->AddWithValue("@futan_juryo", Int16::Parse(record->Substring(288, 2)));
-		command->Parameters->AddWithValue("@blinker_shiyo_kubun", record->Substring(294, 1));
-		command->Parameters->AddWithValue("@kishu_code", Int32::Parse(record->Substring(296, 5)));
-		command->Parameters->AddWithValue("@kishu_minarai_code", record->Substring(322, 1));
+		command->Parameters->AddWithValue("@kaisai_date", DateTime::ParseExact(ByteSubstring(record, 11, 8), "yyyyMMdd", nullptr));
+		command->Parameters->AddWithValue("@keibajo_code", ByteSubstring(record, 19, 2));
+		command->Parameters->AddWithValue("@kaisai_kai", Int16::Parse(ByteSubstring(record, 21, 2)));
+		command->Parameters->AddWithValue("@kaisai_nichime", Int16::Parse(ByteSubstring(record, 23, 2)));
+		command->Parameters->AddWithValue("@kyoso_bango", Int16::Parse(ByteSubstring(record, 25, 2)));
+		command->Parameters->AddWithValue("@wakuban", Int16::Parse(ByteSubstring(record, 27, 1)));
+		command->Parameters->AddWithValue("@umaban", Int16::Parse(ByteSubstring(record, 28, 2)));
+		command->Parameters->AddWithValue("@ketto_toroku_bango", Int64::Parse(ByteSubstring(record, 30, 10)));
+		command->Parameters->AddWithValue("@futan_juryo", Int16::Parse(ByteSubstring(record, 288, 3)));
+		command->Parameters->AddWithValue("@blinker_shiyo_kubun", ByteSubstring(record, 294, 1));
+		command->Parameters->AddWithValue("@kishu_code", Int32::Parse(ByteSubstring(record, 296, 5)));
+		command->Parameters->AddWithValue("@kishu_minarai_code", ByteSubstring(record, 322, 1));
 
-		command->Parameters->AddWithValue("@bataiju", DBNull::Value);
-		String^ bataijuStr = record->Substring(324, 3);
-		if (bataijuStr != "   ")
+		String^ bataijuStr = ByteSubstring(record, 324, 3);
+		if (bataijuStr != "   " && bataijuStr != "000" && bataijuStr != "999")
 			command->Parameters->AddWithValue("@bataiju", Int16::Parse(bataijuStr));
+		else
+			command->Parameters->AddWithValue("@bataiju", DBNull::Value);
 
-		command->Parameters->AddWithValue("@zogensa", DBNull::Value);
-		String^ zogensaStr = record->Substring(327, 4);
+		String^ zogensaStr = ByteSubstring(record, 327, 4);
 		if (zogensaStr != "    " && zogensaStr != " 999")
 			command->Parameters->AddWithValue("@zogensa", Int16::Parse(zogensaStr));
+		else
+			command->Parameters->AddWithValue("@zogensa", DBNull::Value);
 
-		command->Parameters->AddWithValue("@ijo_kubun_code", record->Substring(331, 1));
-		command->Parameters->AddWithValue("@kakutei_chakujun", Int16::Parse(record->Substring(334, 2)));
-		command->Parameters->AddWithValue("@soha_time", Int16::Parse(record->Substring(338, 1)) * 600 + Int16::Parse(record->Substring(339, 3)));
+		command->Parameters->AddWithValue("@ijo_kubun_code", ByteSubstring(record, 331, 1));
+		command->Parameters->AddWithValue("@kakutei_chakujun", Int16::Parse(ByteSubstring(record, 334, 2)));
+		command->Parameters->AddWithValue("@soha_time", Int16::Parse(ByteSubstring(record, 338, 1)) * 600 + Int16::Parse(ByteSubstring(record, 339, 3)));
 
-		// Šù‘¶‚ÌƒŒƒR[ƒh‚ª‚ ‚é‚©Šm”F
+		// æ—¢å­˜ã®ãƒ¬ã‚³ãƒ¼ãƒ‰ãŒã‚ã‚‹ã‹ç¢ºèª
 		command->CommandText =
 			"SELECT creation_date FROM se"
 			" WHERE kaisai_date = @kaisai_date"
@@ -52,7 +54,7 @@ int RecordProcessor::ProcessSERecord(String^ record) {
 			" AND ketto_toroku_bango = @ketto_toroku_bango";
 		Object^ existingCreationDateObj = command->ExecuteScalar();
 
-		// Šù‘¶‚ÌƒŒƒR[ƒh‚ª‚È‚¢ê‡‚Í‘}“ü‚µ‚ÄI—¹
+		// æ—¢å­˜ã®ãƒ¬ã‚³ãƒ¼ãƒ‰ãŒãªã„å ´åˆã¯æŒ¿å…¥ã—ã¦çµ‚äº†
 		if (existingCreationDateObj == nullptr) {
 			command->CommandText =
 				"INSERT INTO se (data_type, creation_date, "
@@ -70,14 +72,14 @@ int RecordProcessor::ProcessSERecord(String^ record) {
 			return PROCESS_SUCCESS;
 		}
 
-		// Šù‘¶‚ÌƒŒƒR[ƒh‚ª‚ ‚éê‡‚Í“ú•t‚ðŠm”F
+		// æ—¢å­˜ã®ãƒ¬ã‚³ãƒ¼ãƒ‰ãŒã‚ã‚‹å ´åˆã¯æ—¥ä»˜ã‚’ç¢ºèª
 		DateTime^ existingCreationDate = Convert::ToDateTime(existingCreationDateObj);
 
-		// Šù‘¶‚Ì“ú•t‚Ì•û‚ªV‚µ‚¢ê‡‚Í‰½‚à‚µ‚È‚¢‚ÅI—¹
+		// æ—¢å­˜ã®æ—¥ä»˜ã®æ–¹ãŒæ–°ã—ã„å ´åˆã¯ä½•ã‚‚ã—ãªã„ã§çµ‚äº†
 		if (existingCreationDate->CompareTo(creationDate) > 0)
 			return PROCESS_SUCCESS;
 
-		// Šù‘¶‚Ì“ú•t‚ªŒÃ‚¢‚©“¯‚¶ê‡‚ÍXV‚µ‚ÄI—¹
+		// æ—¢å­˜ã®æ—¥ä»˜ãŒå¤ã„ã‹åŒã˜å ´åˆã¯æ›´æ–°ã—ã¦çµ‚äº†
 		command->CommandText =
 			"UPDATE se SET "
 			"data_type = @data_type, "

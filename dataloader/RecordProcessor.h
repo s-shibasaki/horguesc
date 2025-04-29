@@ -3,10 +3,11 @@ ref class RecordProcessor
 {
 private:
 	Npgsql::NpgsqlConnection^ connection;
-	int ProcessRARecord(System::String^ record);
-	int ProcessSERecord(System::String^ record);
-	int ProcessUMRecord(System::String^ record);
-	int ProcessHNRecord(System::String^ record);
+	int ProcessRARecord(array<System::Byte>^ record);
+	int ProcessSERecord(array<System::Byte>^ record);
+	int ProcessUMRecord(array<System::Byte>^ record);
+	int ProcessHNRecord(array<System::Byte>^ record);
+	System::String^ ByteSubstring(array<System::Byte>^ bytes, int byteStartIndex, int byteLength);
 
 public:
 	static const int PROCESS_ERROR = -1;
@@ -15,6 +16,6 @@ public:
 
 	bool Initialize();
 	RecordProcessor(Npgsql::NpgsqlConnection^ connection);
-	int ProcessRecord(System::String^ record);
+	int ProcessRecord(array<System::Byte>^ record);
 };
 

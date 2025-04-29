@@ -3,37 +3,37 @@
 using namespace System;
 using namespace Npgsql;
 
-int RecordProcessor::ProcessRARecord(String^ record) {
+int RecordProcessor::ProcessRARecord(array<Byte>^ record) {
 	try {
 		NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
 
-		command->Parameters->AddWithValue("@data_type", record->Substring(2, 1));
+		command->Parameters->AddWithValue("@data_type", ByteSubstring(record, 2, 1));
 
-		DateTime^ creationDate = DateTime::ParseExact(record->Substring(3, 8), "yyyyMMdd", nullptr);
+		DateTime^ creationDate = DateTime::ParseExact(ByteSubstring(record, 3, 8), "yyyyMMdd", nullptr);
 		command->Parameters->AddWithValue("@creation_date", creationDate);
 
-		command->Parameters->AddWithValue("@kaisai_date", DateTime::ParseExact(record->Substring(11, 8), "yyyyMMdd", nullptr));
-		command->Parameters->AddWithValue("@keibajo_code", record->Substring(19, 2));
-		command->Parameters->AddWithValue("@kaisai_kai", Int16::Parse(record->Substring(21, 2)));
-		command->Parameters->AddWithValue("@kaisai_nichime", Int16::Parse(record->Substring(23, 2)));
-		command->Parameters->AddWithValue("@kyoso_bango", Int16::Parse(record->Substring(25, 2)));
-		command->Parameters->AddWithValue("@kyori", Int16::Parse(record->Substring(697, 4)));
+		command->Parameters->AddWithValue("@kaisai_date", DateTime::ParseExact(ByteSubstring(record, 11, 8), "yyyyMMdd", nullptr));
+		command->Parameters->AddWithValue("@keibajo_code", ByteSubstring(record, 19, 2));
+		command->Parameters->AddWithValue("@kaisai_kai", Int16::Parse(ByteSubstring(record, 21, 2)));
+		command->Parameters->AddWithValue("@kaisai_nichime", Int16::Parse(ByteSubstring(record, 23, 2)));
+		command->Parameters->AddWithValue("@kyoso_bango", Int16::Parse(ByteSubstring(record, 25, 2)));
+		command->Parameters->AddWithValue("@kyori", Int16::Parse(ByteSubstring(record, 697, 4)));
 
-		String^ trackCode = record->Substring(705, 2);
+		String^ trackCode = ByteSubstring(record, 705, 2);
 		command->Parameters->AddWithValue("@track_code", trackCode);
 
-		command->Parameters->AddWithValue("@course_kubun", record->Substring(709, 2));
-		command->Parameters->AddWithValue("@tenko_code", record->Substring(887, 1));
+		command->Parameters->AddWithValue("@course_kubun", ByteSubstring(record, 709, 2));
+		command->Parameters->AddWithValue("@tenko_code", ByteSubstring(record, 887, 1));
 
 		Int16 trackCodeInt = Int16::Parse(trackCode);
 		String^ babajotaiCode = "0";
 		if ((10 <= trackCodeInt && trackCodeInt <= 22) || trackCodeInt == 51 || (53 <= trackCodeInt && trackCodeInt <= 59))
-			babajotaiCode = record->Substring(888, 1);
+			babajotaiCode = ByteSubstring(record, 888, 1);
 		else if ((23 <= trackCodeInt && trackCodeInt <= 29) || trackCodeInt == 52)
-			babajotaiCode = record->Substring(889, 1);
+			babajotaiCode = ByteSubstring(record, 889, 1);
 		command->Parameters->AddWithValue("@babajotai_code", babajotaiCode);
 
-		// Šù‘¶‚ÌƒŒƒR[ƒh‚ª‚ ‚é‚©Šm”F
+		// æ—¢å­˜ã®ãƒ¬ã‚³ãƒ¼ãƒ‰ãŒã‚ã‚‹ã‹ç¢ºèª
 		command->CommandText = "SELECT creation_date FROM ra WHERE "
 			"kaisai_date = @kaisai_date AND "
 			"keibajo_code = @keibajo_code AND "
@@ -42,7 +42,7 @@ int RecordProcessor::ProcessRARecord(String^ record) {
 			"kyoso_bango = @kyoso_bango";
 		Object^ existingCreationDateObj = command->ExecuteScalar();
 
-		// Šù‘¶‚ÌƒŒƒR[ƒh‚ª‚È‚¢ê‡‚Í‘}“ü‚µ‚ÄI—¹
+		// æ—¢å­˜ã®ãƒ¬ã‚³ãƒ¼ãƒ‰ãŒãªã„å ´åˆã¯æŒ¿å…¥ã—ã¦çµ‚äº†
 		if (existingCreationDateObj == nullptr) {
 			command->CommandText = "INSERT INTO ra (data_type, creation_date, "
 				"kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, "
@@ -54,14 +54,14 @@ int RecordProcessor::ProcessRARecord(String^ record) {
 			return PROCESS_SUCCESS;
 		}
 
-		// Šù‘¶‚ÌƒŒƒR[ƒh‚ª‚ ‚éê‡‚Í“ú•t‚ðŠm”F
+		// æ—¢å­˜ã®ãƒ¬ã‚³ãƒ¼ãƒ‰ãŒã‚ã‚‹å ´åˆã¯æ—¥ä»˜ã‚’ç¢ºèª
 		DateTime^ existingCreationDate = Convert::ToDateTime(existingCreationDateObj);
 
-		// Šù‘¶‚Ì“ú•t‚Ì•û‚ªV‚µ‚¢ê‡‚Í‰½‚à‚µ‚È‚¢‚ÅI—¹
+		// æ—¢å­˜ã®æ—¥ä»˜ã®æ–¹ãŒæ–°ã—ã„å ´åˆã¯ä½•ã‚‚ã—ãªã„ã§çµ‚äº†
 		if (existingCreationDate->CompareTo(creationDate) > 0)
 			return PROCESS_SUCCESS;
 
-		// Šù‘¶‚Ì“ú•t‚ªŒÃ‚¢‚©“¯‚¶ê‡‚ÍXV‚µ‚ÄI—¹
+		// æ—¢å­˜ã®æ—¥ä»˜ãŒå¤ã„ã‹åŒã˜å ´åˆã¯æ›´æ–°ã—ã¦çµ‚äº†
 		command->CommandText = "UPDATE ra SET "
 			"data_type = @data_type, "
 			"creation_date = @creation_date, "

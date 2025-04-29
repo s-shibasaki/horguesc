@@ -53,7 +53,7 @@ bool Config::Load(String^ iniFile) {
 				Console::WriteLine("StartYear: {0}", intValue);
 				_startYear = intValue;
 			}
-			else if ("DeleteDatabase") {
+			else if (key == "DeleteDatabase") {
 				bool boolValue = Boolean::Parse(value);
 				Console::WriteLine("DeleteDatabase: {0}", boolValue);
 				_deleteDatabase = boolValue;

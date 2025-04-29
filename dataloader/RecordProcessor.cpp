@@ -49,7 +49,7 @@ bool RecordProcessor::Initialize() {
 			"ijo_kubun_code CHAR(1), "
 			"kakutei_chakujun SMALLINT, "
 			"soha_time SMALLINT, "
-			"PRIMARY KEY (kaisai_date, keibajo_code, kyoso_bango, umaban, ketto_toroku_bango))";
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, umaban, ketto_toroku_bango))";
 		command->ExecuteNonQuery();
 
 		command->CommandText =
@@ -85,10 +85,10 @@ bool RecordProcessor::Initialize() {
 	}
 }
 
-// PROCESS_ERROR ‚ğ•Ô‚·ê‡‚Í‰üs‚·‚é‚±‚Æ
-int RecordProcessor::ProcessRecord(String^ record) {
+// PROCESS_ERROR ã‚’è¿”ã™å ´åˆã¯æ”¹è¡Œã™ã‚‹ã“ã¨
+int RecordProcessor::ProcessRecord(array<Byte>^ record) {
 	try {
-		String^ recordTypeId = record->Substring(0, 2);
+		String^ recordTypeId = ByteSubstring(record, 0, 2);
 		int result = PROCESS_SKIP;
 
 		if (recordTypeId == "RA")
@@ -109,3 +109,15 @@ int RecordProcessor::ProcessRecord(String^ record) {
 	}
 }
 
+String^ RecordProcessor::ByteSubstring(array<Byte>^ bytes, int byteStartIndex, int byteLength) {
+	// Ensure we don't exceed array bounds
+	if (byteStartIndex >= bytes->Length)
+		return String::Empty;
+
+	// Adjust byteLenght if it would exceed the array
+	if (byteStartIndex + byteLength > bytes->Length)
+		byteLength = bytes->Length - byteStartIndex;
+
+	// Extract the specified bytes and convert back to string
+	return System::Text::Encoding::GetEncoding(932)->GetString(bytes, byteStartIndex, byteLength);
+}

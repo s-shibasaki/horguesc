@@ -10,7 +10,7 @@ int main(array<String^>^ args)
     Application::EnableVisualStyles();
     Application::SetCompatibleTextRenderingDefault(false);
 
-    // ƒƒCƒ“ƒtƒH[ƒ€‚Ìì¬‚ÆÀs
+    // ãƒ¡ã‚¤ãƒ³ãƒ•ã‚©ãƒ¼ãƒ ã®ä½œæˆã¨å®Ÿè¡Œ
     Application::Run(gcnew MainForm());
     return 0;
 }

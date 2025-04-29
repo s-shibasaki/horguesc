@@ -21,7 +21,7 @@ void ProgressBar::Update(int progress) {
 	if (progress > total)
 		progress = total;
 
-	// i’»‚É•Ï‰»‚ª‚È‚¢ê‡‚ÍXV‚µ‚È‚¢
+	// é€²æ—ã«å¤‰åŒ–ãŒãªã„å ´åˆã¯æ›´æ–°ã—ãªã„
 	if (this->current == progress)
 		return;
 

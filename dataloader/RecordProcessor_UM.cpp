@@ -5,27 +5,27 @@ using namespace Npgsql;
 
 
 
-int RecordProcessor::ProcessUMRecord(String^ record) {
+int RecordProcessor::ProcessUMRecord(array<Byte>^ record) {
 	try {
 		NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
 
-		command->Parameters->AddWithValue("@data_type", record->Substring(2, 1));
+		command->Parameters->AddWithValue("@data_type", ByteSubstring(record, 2, 1));
 
-		DateTime^ creationDate = DateTime::ParseExact(record->Substring(3, 8), "yyyyMMdd", nullptr);
+		DateTime^ creationDate = DateTime::ParseExact(ByteSubstring(record, 3, 8), "yyyyMMdd", nullptr);
 		command->Parameters->AddWithValue("@creation_date", creationDate);
 
-		command->Parameters->AddWithValue("@ketto_toroku_bango", Int64::Parse(record->Substring(11, 10)));
-		command->Parameters->AddWithValue("@birth_date", DateTime::ParseExact(record->Substring(38, 8), "yyyyMMdd", nullptr));
-		command->Parameters->AddWithValue("@seibetsu_code", record->Substring(200, 1));
+		command->Parameters->AddWithValue("@ketto_toroku_bango", Int64::Parse(ByteSubstring(record, 11, 10)));
+		command->Parameters->AddWithValue("@birth_date", DateTime::ParseExact(ByteSubstring(record, 38, 8), "yyyyMMdd", nullptr));
+		command->Parameters->AddWithValue("@seibetsu_code", ByteSubstring(record, 200, 1));
 		for (int i = 0; i < 14; i++)
-			command->Parameters->AddWithValue(String::Format("@hanshoku_toroku_bango_{0:00}", i + 1), Int64::Parse(record->Substring(204 + (46 * i), 10)));
-		command->Parameters->AddWithValue("@chokyoshi_code", Int32::Parse(record->Substring(849, 5)));
+			command->Parameters->AddWithValue(String::Format("@hanshoku_toroku_bango_{0:00}", i + 1), Int64::Parse(ByteSubstring(record, 204 + (46 * i), 10)));
+		command->Parameters->AddWithValue("@chokyoshi_code", Int32::Parse(ByteSubstring(record, 849, 5)));
 
-		// Šù‘¶‚ÌƒŒƒR[ƒh‚ª‚ ‚é‚©Šm”F
+		// æ—¢å­˜ã®ãƒ¬ã‚³ãƒ¼ãƒ‰ãŒã‚ã‚‹ã‹ç¢ºèª
 		command->CommandText = "SELECT creation_date FROM um WHERE ketto_toroku_bango = @ketto_toroku_bango";
 		Object^ existingCreationDateObj = command->ExecuteScalar();
 
-		// Šù‘¶‚ÌƒŒƒR[ƒh‚ª‚È‚¢ê‡‚Í‘}“ü‚µ‚ÄI—¹
+		// æ—¢å­˜ã®ãƒ¬ã‚³ãƒ¼ãƒ‰ãŒãªã„å ´åˆã¯æŒ¿å…¥ã—ã¦çµ‚äº†
 		if (existingCreationDateObj == nullptr) {
 			command->CommandText = 
 				"INSERT INTO um (data_type, creation_date, "
@@ -44,14 +44,14 @@ int RecordProcessor::ProcessUMRecord(String^ record) {
 			return PROCESS_SUCCESS;
 		}
 
-		// Šù‘¶‚ÌƒŒƒR[ƒh‚ª‚ ‚éê‡‚Í“ú•t‚ðŠm”F
+		// æ—¢å­˜ã®ãƒ¬ã‚³ãƒ¼ãƒ‰ãŒã‚ã‚‹å ´åˆã¯æ—¥ä»˜ã‚’ç¢ºèª
 		DateTime^ existingCreationDate = Convert::ToDateTime(existingCreationDateObj);
 
-		// Šù‘¶‚Ì“ú•t‚Ì•û‚ªV‚µ‚¢ê‡‚Í‰½‚à‚µ‚È‚¢‚ÅI—¹
+		// æ—¢å­˜ã®æ—¥ä»˜ã®æ–¹ãŒæ–°ã—ã„å ´åˆã¯ä½•ã‚‚ã—ãªã„ã§çµ‚äº†
 		if (existingCreationDate->CompareTo(creationDate) > 0)
 			return PROCESS_SUCCESS;
 
-		// Šù‘¶‚Ì“ú•t‚ªŒÃ‚¢‚©“¯‚¶ê‡‚ÍXV‚µ‚ÄI—¹
+		// æ—¢å­˜ã®æ—¥ä»˜ãŒå¤ã„ã‹åŒã˜å ´åˆã¯æ›´æ–°ã—ã¦çµ‚äº†
 		command->CommandText =
 			"UPDATE um SET "
 			"data_type = @data_type, "

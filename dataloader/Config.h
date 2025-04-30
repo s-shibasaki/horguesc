@@ -1,4 +1,4 @@
-ref class Config {
+﻿ref class Config {
 private:
 	// DataLoader
 	System::String^ _sid;
@@ -26,6 +26,7 @@ public:
 	property System::String^ DbPassword {System::String^ get() { return _dbPassword; }};
 
 	Config();
+	bool Load();
 	bool Load(System::String^ iniFile);
 };
 

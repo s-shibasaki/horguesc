@@ -123,7 +123,7 @@ bool DataLoader::InitializeDatabase() {
 
 bool DataLoader::Initialize() {
 	config = gcnew Config();
-	config->Load("horguesc.ini");
+	config->Load();
 
 	if (!InitializeDatabase()) {
 		Console::WriteLine("Database initialization failed.");

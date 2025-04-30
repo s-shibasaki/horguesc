@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 ref class Config;
 ref class RecordProcessor;
 ref class DataLoader {
@@ -22,8 +22,12 @@ private:
 	int WaitForDownloadCompletion(int downloadCount);
 	bool InitializeDatabase();
 	bool RollbackTransaction(Npgsql::NpgsqlTransaction^ transaction);
+	array<System::String^>^ args;
+	bool ExecuteSetup();
+	bool ExecuteUpdate();
+	bool ExecuteRealtime();
 public:
-	DataLoader(AxJVDTLabLib::AxJVLink^);
+	DataLoader(AxJVDTLabLib::AxJVLink^, array<System::String^>^);
 	bool Execute();
 };
 

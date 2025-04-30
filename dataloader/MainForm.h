@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "DataLoader.h"
 
@@ -17,8 +17,9 @@ namespace dataloader {
 	public ref class MainForm : public System::Windows::Forms::Form
 	{
 	public:
-		MainForm(void)
+		MainForm(array<String^>^ args)
 		{
+			this->args = args;
 			InitializeComponent();
 			//
 			//TODO: ここにコンストラクター コードを追加します
@@ -39,6 +40,7 @@ namespace dataloader {
 
 	private: 
 		AxJVDTLabLib::AxJVLink^ jvlink;
+		array<String^>^ args;
 
 		/// <summary>
 		/// 必要なデザイナー変数です。
@@ -83,7 +85,7 @@ namespace dataloader {
 
 	private:
 		System::Void MainForm_Load(System::Object^ sender, System::EventArgs^ e) {
-			DataLoader^ dataLoader = gcnew DataLoader(jvlink);
+			DataLoader^ dataLoader = gcnew DataLoader(jvlink, args);
 			if (!dataLoader->Execute())
 				Environment::Exit(1);
 			Application::Exit();

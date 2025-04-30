@@ -1,4 +1,4 @@
-#include "MainForm.h"
+﻿#include "MainForm.h"
 
 using namespace System;
 using namespace System::Windows::Forms;
@@ -11,6 +11,6 @@ int main(array<String^>^ args)
     Application::SetCompatibleTextRenderingDefault(false);
 
     // メインフォームの作成と実行
-    Application::Run(gcnew MainForm());
+    Application::Run(gcnew MainForm(args));
     return 0;
 }

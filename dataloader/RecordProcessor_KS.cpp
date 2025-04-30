@@ -5,7 +5,7 @@ using namespace Npgsql;
 
 
 
-int RecordProcessor::ProcessCHRecord(array<Byte>^ record) {
+int RecordProcessor::ProcessKSRecord(array<Byte>^ record) {
 	try {
 		NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
 
@@ -14,20 +14,20 @@ int RecordProcessor::ProcessCHRecord(array<Byte>^ record) {
 		DateTime^ creationDate = DateTime::ParseExact(ByteSubstring(record, 3, 8), "yyyyMMdd", nullptr);
 		command->Parameters->AddWithValue("@creation_date", creationDate);
 
-		command->Parameters->AddWithValue("@chokyoshi_code", Int32::Parse(ByteSubstring(record, 11, 5)));
-		command->Parameters->AddWithValue("@seibetsu_kubun", ByteSubstring(record, 193, 1));
+		command->Parameters->AddWithValue("@kishu_code", Int32::Parse(ByteSubstring(record, 11, 5)));
+		command->Parameters->AddWithValue("@seibetsu_kubun", ByteSubstring(record, 227, 1));
 
 		// 既存のレコードがあるか確認
 		command->CommandText =
-			"SELECT creation_date FROM ch WHERE chokyoshi_code = @chokyoshi_code";
+			"SELECT creation_date FROM ks WHERE kishu_code = @kishu_code";
 		Object^ existingCreationDateObj = command->ExecuteScalar();
 
 		// 既存のレコードがない場合は挿入して終了
 		if (existingCreationDateObj == nullptr) {
 			command->CommandText =
-				"INSERT INTO ch (data_type, creation_date, chokyoshi_code, "
+				"INSERT INTO ks (data_type, creation_date, kishu_code, "
 				"seibetsu_kubun) "
-				"VALUES (@data_type, @creation_date, @chokyoshi_code, "
+				"VALUES (@data_type, @creation_date, @kishu_code, "
 				"@seibetsu_kubun)";
 			command->ExecuteNonQuery();
 			return PROCESS_SUCCESS;
@@ -42,17 +42,17 @@ int RecordProcessor::ProcessCHRecord(array<Byte>^ record) {
 
 		// 既存の日付が古いか同じ場合は更新して終了
 		command->CommandText =
-			"UPDATE ch SET "
+			"UPDATE ks SET "
 			"data_type = @data_type, "
 			"creation_date = @creation_date, "
 			"seibetsu_kubun = @seibetsu_kubun "
-			"WHERE chokyoshi_code = @chokyoshi_code";
+			"WHERE kishu_code = @kishu_code";
 		command->ExecuteNonQuery();
 		return PROCESS_SUCCESS;
 	}
 	catch (Exception^ ex) {
 		Console::WriteLine();
-		Console::WriteLine("Error processing CH record: {0}", ex->Message);
+		Console::WriteLine("Error processing KS record: {0}", ex->Message);
 		return PROCESS_ERROR;
 	}
 }

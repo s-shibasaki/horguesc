@@ -80,7 +80,29 @@ bool RecordProcessor::Initialize() {
 			"data_type VARCHAR(1), "
 			"creation_date DATE, "
 			"chokyoshi_code INT, "
+			"seibetsu_kubun CHAR(1), "
 			"PRIMARY KEY (chokyoshi_code))";
+		command->ExecuteNonQuery();
+
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS ks ("
+			"data_type VARCHAR(1), "
+			"creation_date DATE, "
+			"kishu_code INT, "
+			"seibetsu_kubun CHAR(1), "
+			"PRIMARY KEY (kishu_code))";
+		command->ExecuteNonQuery();
+
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS cs ("
+			"data_type VARCHAR(1), "
+			"creation_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kyori SMALLINT, "
+			"track_code CHAR(2), "
+			"kaishu_date DATE, "
+			"description VARCHAR(6800), "
+			"PRIMARY KEY (keibajo_code, kyori, track_code, kaishu_date))";
 		command->ExecuteNonQuery();
 
 		return true;
@@ -105,6 +127,10 @@ int RecordProcessor::ProcessRecord(array<Byte>^ record) {
 			return ProcessHNRecord(record);
 		else if (recordTypeId == "CH")
 			return ProcessCHRecord(record);
+		else if (recordTypeId == "KS")
+			return ProcessKSRecord(record);
+		else if (recordTypeId == "CS")
+			return ProcessCSRecord(record);
 		else
 			return PROCESS_SKIP; // Unknown record type, skip it
 	}

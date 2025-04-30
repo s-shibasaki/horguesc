@@ -171,7 +171,9 @@
     <ClCompile Include="ProgressBar.cpp" />
     <ClCompile Include="RecordProcessor.cpp" />
     <ClCompile Include="RecordProcessor_CH.cpp" />
+    <ClCompile Include="RecordProcessor_CS.cpp" />
     <ClCompile Include="RecordProcessor_HN.cpp" />
+    <ClCompile Include="RecordProcessor_KS.cpp" />
     <ClCompile Include="RecordProcessor_RA.cpp" />
     <ClCompile Include="RecordProcessor_SE.cpp" />
     <ClCompile Include="RecordProcessor_UM.cpp" />

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 ref class RecordProcessor
 {
 private:
@@ -8,6 +8,8 @@ private:
 	int ProcessUMRecord(array<System::Byte>^ record);
 	int ProcessHNRecord(array<System::Byte>^ record);
 	int ProcessCHRecord(array<System::Byte>^ record);
+	int ProcessKSRecord(array<System::Byte>^ record);
+	int ProcessCSRecord(array<System::Byte>^ record);
 	System::String^ ByteSubstring(array<System::Byte>^ bytes, int byteStartIndex, int byteLength);
 
 public:

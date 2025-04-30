@@ -1,4 +1,4 @@
-#include "DataLoader.h"
+﻿#include "DataLoader.h"
 #include "Config.h"
 #include "ProgressBar.h"
 #include "RecordProcessor.h"
@@ -8,11 +8,32 @@ using namespace AxJVDTLabLib;
 using namespace System::Runtime::InteropServices;
 using namespace Npgsql;
 
-DataLoader::DataLoader(AxJVLink^ jvlink) {
+DataLoader::DataLoader(AxJVLink^ jvlink, array<String^>^ args) {
 	this->jvlink = jvlink;
+	this->args = args;
 }
 
 bool DataLoader::Execute() {
+	if (args->Length == 0) {
+		Console::WriteLine("No arguments provided.");
+		return false;
+	}
+	if (args[0] == "setup") {
+		return ExecuteSetup();
+	}
+	else if (args[0] == "update") {
+		return ExecuteUpdate();
+	}
+	else if (args[0] == "realtime") {
+		return ExecuteRealtime();
+	}
+	else {
+		Console::WriteLine("Invalid argument: {0}", args[0]);
+		return false;
+	}
+}
+
+bool DataLoader::ExecuteSetup() {
 	if (!Initialize()) {
 		Console::WriteLine("Initialization failed.");
 		return false;
@@ -38,6 +59,15 @@ bool DataLoader::Execute() {
 
 	return true;
 }
+
+bool DataLoader::ExecuteUpdate() {
+	return true;
+}
+
+bool DataLoader::ExecuteRealtime() {
+	return true;
+}
+
 
 bool DataLoader::InitializeDatabase() {
 	try {

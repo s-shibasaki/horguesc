@@ -1,4 +1,4 @@
-#include "RecordProcessor.h"
+﻿#include "RecordProcessor.h"
 
 using namespace System;
 using namespace Npgsql;
@@ -10,8 +10,15 @@ int RecordProcessor::ProcessSERecord(array<Byte>^ record) {
 
 		command->Parameters->AddWithValue("@data_type", ByteSubstring(record, 2, 1));
 
-		DateTime^ creationDate = DateTime::ParseExact(ByteSubstring(record, 3, 8), "yyyyMMdd", nullptr);
-		command->Parameters->AddWithValue("@creation_date", creationDate);
+		DateTime^ creationDate = nullptr;
+		String^ creationDateStr = ByteSubstring(record, 3, 8);
+		if (creationDateStr != "00000000") {
+			creationDate = DateTime::ParseExact(creationDateStr, "yyyyMMdd", nullptr);
+			command->Parameters->AddWithValue("@creation_date", creationDate);
+		}
+		else {
+			command->Parameters->AddWithValue("@creation_date", DBNull::Value);
+		}
 
 		command->Parameters->AddWithValue("@kaisai_date", DateTime::ParseExact(ByteSubstring(record, 11, 8), "yyyyMMdd", nullptr));
 		command->Parameters->AddWithValue("@keibajo_code", ByteSubstring(record, 19, 2));
@@ -73,11 +80,14 @@ int RecordProcessor::ProcessSERecord(array<Byte>^ record) {
 		}
 
 		// 既存のレコードがある場合は日付を確認
-		DateTime^ existingCreationDate = Convert::ToDateTime(existingCreationDateObj);
+		if (existingCreationDateObj != DBNull::Value) {
+			DateTime^ existingCreationDate = Convert::ToDateTime(existingCreationDateObj);
 
-		// 既存の日付の方が新しい場合は何もしないで終了
-		if (existingCreationDate->CompareTo(creationDate) > 0)
-			return PROCESS_SUCCESS;
+			// 既存の日付の方が新しい場合は何もしないで終了
+			if (existingCreationDate->CompareTo(creationDate) > 0)
+				return PROCESS_SUCCESS;
+		}
+
 
 		// 既存の日付が古いか同じ場合は更新して終了
 		command->CommandText =

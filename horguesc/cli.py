@@ -3,11 +3,17 @@ Command line interface for the horguesc package.
 """
 
 import argparse
+import logging
 import sys
+
+# アプリケーション全体のログ設定をここで行う
+logging.basicConfig(level=logging.INFO, 
+                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
 def main():
     """Entry point for the horguesc command line application."""
+    logger = logging.getLogger(__name__)
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--version", action="store_true", help="show version information"

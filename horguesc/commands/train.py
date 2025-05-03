@@ -2,8 +2,12 @@
 Implementation of the train command for horguesc.
 """
 import configparser
+import logging
 import os
 import sys
+from horguesc.database.operations import DatabaseOperations
+
+logger = logging.getLogger(__name__)
 
 def run(args):
     """
@@ -21,12 +25,32 @@ def run(args):
     
     try:
         config.read(config_path)
-        print(f"Configuration loaded from {config_path}")
+        logger.info(f"Configuration loaded from {config_path}")
         
     except Exception as e:
-        print(f"Error loading configuration: {e}", file=sys.stderr)
+        logger.error(f"Error loading configuration: {e}")
         return 1
     
-    print("Training a model...")
+    # Connect to the database
+    try:
+        logger.info("Connecting to the database...")
+        db_ops = DatabaseOperations(config)
+        
+        # Test database connection
+        if db_ops.test_connection():
+            logger.info("Database connection successful")
+            
+            # Get list of tables for verification
+            tables = db_ops.get_table_list()
+            logger.info(f"Available tables: {', '.join(tables)}")
+        else:
+            logger.error("Failed to connect to the database")
+            return 1
+            
+    except Exception as e:
+        logger.error(f"Database error: {e}")
+        return 1
+    
+    logger.info("Training a model...")
     # TODO: Implement model training with configuration parameters
     return 0

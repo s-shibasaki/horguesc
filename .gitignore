@@ -45,9 +45,6 @@ CMakeCache.txt
 cmake_install.cmake
 Makefile
 
-# Configuration files
-horguesc.ini
-
 # Temporary files
 *.tmp
 *.bak

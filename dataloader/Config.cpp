@@ -17,16 +17,7 @@ Config::Config() {
 }
 
 bool Config::Load() {
-	// First try to load from current directory
-	String^ currentDir = Environment::CurrentDirectory;
-	String^ currentDirIniFile = Path::Combine(currentDir, "horguesc.ini");
-
-	if (File::Exists(currentDirIniFile)) {
-		Console::WriteLine("Found configuration in current directory.");
-		return Load(currentDirIniFile);
-	}
-
-	// If not found, try executable directory
+	// First try  executable directory
 	String^ executablePath = Assembly::GetExecutingAssembly()->Location;
 	String^ executableDir = Path::GetDirectoryName(executablePath);
 	String^ execDirIniFile = Path::Combine(executableDir, "horguesc.ini");
@@ -36,8 +27,18 @@ bool Config::Load() {
 		return Load(execDirIniFile);
 	}
 
-	// Not found in either location
-	Console::WriteLine("Configuration file 'horguesc.ini' not found in current or executable directory.");
+	// Try one level up (for Debug/Release builds)
+	String^ projectRoot = Path::GetDirectoryName(executableDir);
+	String^ configDirIniFile = Path::Combine(projectRoot, "config", "horguesc.ini");
+	
+	if (File::Exists(configDirIniFile)) {
+		Console::WriteLine("Found configuration in parent directory's config folder.");
+		return Load(configDirIniFile);
+	}
+
+	// Not found in any location
+	Console::WriteLine("Configuration file 'horguesc.ini' not found in any expected location.");
+	Console::WriteLine("Searched in: executable directory, project config directory.");
 	return false;
 }
 

@@ -18,6 +18,24 @@ class DatabaseOperations:
         """
         self.db_conn = DatabaseConnection.get_instance(config)
     
+    def execute_query(self, query, params=None, fetch_all=False):
+        """
+        Execute a database query and return the results.
+        
+        Args:
+            query: SQL query string
+            params: Optional parameters for the query
+            fetch_all: Whether to fetch all results
+            
+        Returns:
+            Query results if fetch_all is True, otherwise None
+        """
+        try:
+            return self.db_conn.execute_query(query, params, fetch_all)
+        except Exception as e:
+            logger.error(f"Query execution failed: {str(e)}")
+            raise
+    
     def test_connection(self):
         """
         Test the database connection.

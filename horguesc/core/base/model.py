@@ -4,9 +4,10 @@ import torch.nn as nn
 class BaseModel(nn.Module, abc.ABC):
     """Base model class that all task-specific models should inherit from."""
     
-    def __init__(self, config):
+    def __init__(self, config, encoder=None):
         super().__init__()
         self.config = config
+        self.encoder = encoder
     
     @abc.abstractmethod
     def forward(self, inputs):

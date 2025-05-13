@@ -42,3 +42,8 @@ class BaseModel(nn.Module, abc.ABC):
             str: Model name
         """
         pass
+
+# TODO: Create test code for the BaseModel class
+# - Test that child classes properly implement all abstract methods
+# - Test initialization with different config values
+# - Test with and without encoder parameter

@@ -2,6 +2,9 @@ import logging
 import torch
 from collections import defaultdict
 
+# TODO: Review entire file as related code has been modified. Need to ensure compatibility 
+# with updated components and write comprehensive test cases for the MultitaskTrainer class.
+
 logger = logging.getLogger(__name__)
 
 class MultitaskTrainer:

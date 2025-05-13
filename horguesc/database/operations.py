@@ -20,18 +20,28 @@ class DatabaseOperations:
     
     def execute_query(self, query, params=None, fetch_all=False):
         """
-        Execute a database query and return the results.
+        Execute a SQL query and return the results.
         
         Args:
-            query: SQL query string
-            params: Optional parameters for the query
-            fetch_all: Whether to fetch all results
-            
+            query (str): The SQL query to execute
+            params (tuple, optional): Parameters for the query
+            fetch_all (bool): Whether to fetch all results or just one
+        
         Returns:
-            Query results if fetch_all is True, otherwise None
+            The query results
         """
         try:
-            return self.db_conn.execute_query(query, params, fetch_all)
+            if params and not isinstance(params, tuple):
+                params = tuple(params)
+                
+            with self.db_conn.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                
+                if fetch_all:
+                    return cursor.fetchall()
+                else:
+                    return cursor.fetchone()
         except Exception as e:
             logger.error(f"Query execution failed: {str(e)}")
             raise
@@ -44,8 +54,10 @@ class DatabaseOperations:
             bool: True if connection successful, False otherwise
         """
         try:
-            self.db_conn.execute_query("SELECT 1")
-            return True
+            with self.db_conn.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1")
+                return True
         except Exception as e:
             logger.error(f"Connection test failed: {str(e)}")
             return False
@@ -63,7 +75,7 @@ class DatabaseOperations:
         WHERE table_schema = 'public'
         """
         try:
-            results = self.db_conn.execute_query(query, fetch_all=True)
+            results = self.execute_query(query, fetch_all=True)
             return [row[0] for row in results]
         except Exception as e:
             logger.error(f"Failed to get table list: {str(e)}")

@@ -80,45 +80,6 @@ class DatabaseConnection:
         """
         self._connection_pool.putconn(connection)
     
-    def execute_query(self, query, params=None, fetch_all=False):
-        """
-        Execute a query and optionally return results.
-        
-        Args:
-            query: SQL query string
-            params: Query parameters
-            fetch_all: Whether to fetch all results
-            
-        Returns:
-            list or None: Query results if fetch_all is True
-        """
-        connection = None
-        cursor = None
-        result = None
-        
-        try:
-            connection = self.get_connection()
-            cursor = connection.cursor()
-            cursor.execute(query, params or ())
-            
-            if fetch_all:
-                result = cursor.fetchall()
-            else:
-                connection.commit()
-                
-        except Exception as e:
-            if connection:
-                connection.rollback()
-            logger.error(f"Database query error: {str(e)}")
-            raise
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                self.release_connection(connection)
-                
-        return result
-    
     def close_all(self):
         """Close all connections in the pool."""
         if self._connection_pool:

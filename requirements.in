@@ -3,3 +3,6 @@ torchaudio
 torchvision
 psycopg2
 pyinstaller
+pytest
+pip-tools
+pandas

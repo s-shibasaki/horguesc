@@ -35,6 +35,19 @@ class BaseModel(nn.Module, abc.ABC):
         pass
     
     @abc.abstractmethod
+    def compute_metrics(self, outputs, targets):
+        """Compute task-specific evaluation metrics.
+        
+        Args:
+            outputs: Output from the forward pass
+            targets: Target values
+            
+        Returns:
+            dict: Dictionary containing metric names and values
+        """
+        pass
+    
+    @abc.abstractmethod
     def get_name(self):
         """Get the name of the model.
         
@@ -42,8 +55,3 @@ class BaseModel(nn.Module, abc.ABC):
             str: Model name
         """
         pass
-
-# TODO: Create test code for the BaseModel class
-# - Test that child classes properly implement all abstract methods
-# - Test initialization with different config values
-# - Test with and without encoder parameter

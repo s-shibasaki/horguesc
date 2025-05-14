@@ -83,3 +83,10 @@ ENV/
 
 # Data directory
 data/
+
+# Model files and directories
+models/
+*.pt
+*.pth
+*.onnx
+*.h5

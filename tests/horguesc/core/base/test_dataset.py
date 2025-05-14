@@ -1,12 +1,12 @@
 import pytest
 import numpy as np
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from horguesc.core.base.dataset import BaseDataset
 
 # テスト用のデータセットサブクラス
-class MockDataset(BaseDataset):  # TestDataset → MockDataset に変更
+class MockDataset(BaseDataset):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
     
@@ -25,8 +25,8 @@ class MockDataset(BaseDataset):  # TestDataset → MockDataset に変更
 @pytest.fixture
 def mock_config():
     config = MagicMock()
-    config.get_numerical_feature_names.return_value = ['feature1']
-    config.get_categorical_feature_names.return_value = ['feature2']
+    config.numerical_features = ['feature1']
+    config.categorical_features = ['feature2']
     return config
 
 # 特徴量プロセッサーモック
@@ -52,6 +52,8 @@ def test_dataset_initialization(mock_config):
     assert dataset.batch_size == 2
     assert dataset.start_date == datetime(2023, 1, 1)
     assert dataset.end_date == datetime(2023, 1, 31)
+    assert not dataset._data_collected
+    assert not dataset._data_processed
 
 def test_fetch_data(mock_config):
     """データ取得メソッドが正しく機能するかテスト"""
@@ -61,7 +63,27 @@ def test_fetch_data(mock_config):
     assert dataset.raw_data is not None
     assert 'feature1' in dataset.raw_data
     assert 'feature2' in dataset.raw_data
+    assert 'target' in dataset.raw_data
     assert len(dataset.raw_data['feature1']) == 5
+
+def test_numerical_type_conversion(mock_config):
+    """数値特徴量が自動的にfloat32に変換されるかテスト"""
+    dataset = MockDataset(config=mock_config)
+    
+    # _convert_numerical_features_to_float が呼ばれることを確認するためのパッチ
+    with patch.object(BaseDataset, '_convert_numerical_features_to_float') as mock_convert:
+        dataset.fetch_data()
+        assert mock_convert.called
+
+def test_collect_features(mock_config, mock_feature_processor):
+    """特徴量収集が正しく行われるかテスト"""
+    dataset = MockDataset(config=mock_config)
+    dataset.fetch_data()
+    dataset.collect_features(mock_feature_processor)
+    
+    # 特徴量プロセッサーのcollect_values_for_fittingが呼ばれたことを確認
+    mock_feature_processor.collect_values_for_fitting.assert_called_once_with(dataset.raw_data)
+    assert dataset._data_collected
 
 def test_process_features(mock_config, mock_feature_processor):
     """特徴量処理が正しく行われるかテスト"""
@@ -72,10 +94,24 @@ def test_process_features(mock_config, mock_feature_processor):
     assert dataset.processed_data is not None
     assert 'feature1' in dataset.processed_data
     assert 'feature2' in dataset.processed_data
+    
     # 数値特徴量が0.1倍されているか確認
-    np.testing.assert_array_equal(dataset.processed_data['feature1'], np.array([1, 2, 3, 4, 5]) * 0.1)
+    np.testing.assert_array_almost_equal(
+        dataset.processed_data['feature1'], 
+        np.array([1, 2, 3, 4, 5]) * 0.1
+    )
+    
+    # カテゴリ特徴量がエンコードされているか確認
+    np.testing.assert_array_equal(
+        dataset.processed_data['feature2'], 
+        np.array([0, 1, 2, 3, 4])
+    )
+    
+    # バッチインデックスが初期化されていることを確認
+    assert dataset._batch_indices is not None
+    assert dataset._data_processed
 
-def test_batch_retrieval(mock_config, mock_feature_processor):
+def test_get_batch(mock_config, mock_feature_processor):
     """バッチ取得が正しく機能するかテスト"""
     dataset = MockDataset(config=mock_config, batch_size=2)
     dataset.fetch_data()
@@ -101,6 +137,18 @@ def test_mode_validation(mock_config):
     """無効なモードで例外が発生するかテスト"""
     with pytest.raises(ValueError):
         MockDataset(config=mock_config, mode='invalid_mode')
+
+def test_get_all_data(mock_config, mock_feature_processor):
+    """全データの取得が正しく機能するかテスト"""
+    dataset = MockDataset(config=mock_config)
+    dataset.fetch_data()
+    dataset.process_features(mock_feature_processor)
+    
+    all_data = dataset.get_all_data()
+    assert all_data is not None
+    assert 'feature1' in all_data
+    assert 'feature2' in all_data
+    assert len(all_data['feature1']) == 5
 
 def test_shuffle_in_train_mode(mock_config, mock_feature_processor):
     """訓練モードでシャッフルが行われるかテスト"""
@@ -135,3 +183,11 @@ def test_no_shuffle_in_eval_mode(mock_config, mock_feature_processor):
     
     # evalモードではシャッフルされないことを確認
     assert np.array_equal(original_indices, dataset._batch_indices)
+
+def test_data_error_handling(mock_config, mock_feature_processor):
+    """データがないときの例外処理をテスト"""
+    dataset = MockDataset(config=mock_config)
+    
+    # データ取得前に処理しようとすると例外発生
+    with pytest.raises(ValueError):
+        dataset.process_features(mock_feature_processor)

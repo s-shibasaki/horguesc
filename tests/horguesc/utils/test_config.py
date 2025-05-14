@@ -4,6 +4,7 @@ from unittest import mock
 from horguesc.utils.config import Config, find_config, load_config
 
 def test_find_config():
+    """設定ファイル検索機能をテスト"""
     # 存在するパスをモックする
     with mock.patch('os.path.exists', return_value=True):
         assert find_config() is not None
@@ -13,65 +14,81 @@ def test_find_config():
         assert find_config() is None
 
 def test_config_initialization():
+    """設定の初期化をテスト"""
     config = Config()
-    assert config.numerical_features == {}
-    assert config.categorical_features == {}
-    assert config.num_features_count == 0
-    assert config.cat_features_count == 0
+    assert not hasattr(config, 'numerical_features') or config.numerical_features == []
+    assert not hasattr(config, 'categorical_features') or config.categorical_features == []
 
-def test_parse_features():
+def test_parse_features_list():
+    """特徴量リスト形式の構文解析をテスト"""
     config = Config()
     
-    # 設定データを追加
-    config['model'] = {'default_numerical_embedding_dim': '8'}
-    config['features.age'] = {
-        'type': 'numerical',
-        'description': 'User age'
-    }
-    config['features.gender'] = {
-        'type': 'categorical',
-        'description': 'User gender',
-        'cardinality': '3'
+    # 設定データを追加（新形式 - リスト形式）
+    config['features'] = {
+        'numerical_features': 'age, income, weight',
+        'categorical_features': 'gender, country, city'
     }
     
     # 特徴量解析を実行
     config.parse_features()
     
-    # 数値特徴量の検証
-    assert len(config.numerical_features) == 1
-    assert 'age' in config.numerical_features
-    assert config.numerical_features['age']['embedding_dim'] == 8
+    # 特徴量リストの検証
+    assert config.numerical_features == ['age', 'income', 'weight']
+    assert config.categorical_features == ['gender', 'country', 'city']
     
-    # カテゴリ特徴量の検証
-    assert len(config.categorical_features) == 1
-    assert 'gender' in config.categorical_features
-    assert config.categorical_features['gender']['cardinality'] == 3
-    assert config.categorical_features['gender']['embedding_dim'] > 0
+    # 特徴量グループが自動生成されているか検証
+    assert 'numerical' in config.feature_groups
+    assert 'categorical' in config.feature_groups
     
-    # カウント検証
-    assert config.num_features_count == 1
-    assert config.cat_features_count == 1
+    # デフォルトでは各特徴量が自身のグループになっていることを検証
+    assert config.feature_groups['numerical']['age'] == 'age'
+    assert config.feature_groups['categorical']['gender'] == 'gender'
+    
+    # グループごとの特徴量リストも確認
+    assert 'age' in config.group_features['numerical']
+    assert config.group_features['numerical']['age'] == ['age']
 
-def test_get_feature_methods():
+def test_parse_features_with_groups():
+    """グループを含む特徴量設定のテスト"""
     config = Config()
     
-    # テスト用データを設定
-    config.numerical_features = {
-        'age': {'name': 'age', 'embedding_dim': 8},
-        'income': {'name': 'income', 'embedding_dim': 10}
-    }
-    config.categorical_features = {
-        'gender': {'name': 'gender', 'cardinality': 3, 'embedding_dim': 2},
-        'country': {'name': 'country', 'cardinality': 50, 'embedding_dim': 25}
+    # 特徴量リストを設定
+    config['features'] = {
+        'numerical_features': 'age, income, height, weight',
+        'categorical_features': 'gender, country, city'
     }
     
-    # メソッドの戻り値を検証
-    assert config.get_numerical_feature_names() == ['age', 'income']
-    assert config.get_categorical_feature_names() == ['gender', 'country']
+    # グループ情報を追加
+    config['groups'] = {
+        'basic_info': 'age, gender',
+        'financial': 'income',
+        'physical': 'height, weight',
+        'location': 'country, city'
+    }
+    
+    # 特徴量解析を実行
+    config.parse_features()
+    
+    # グループ情報の検証
+    assert config.feature_groups['numerical']['age'] == 'basic_info'
+    assert config.feature_groups['categorical']['gender'] == 'basic_info'
+    assert config.feature_groups['numerical']['income'] == 'financial'
+    assert config.feature_groups['numerical']['height'] == 'physical'
+    assert config.feature_groups['numerical']['weight'] == 'physical'
+    assert config.feature_groups['categorical']['country'] == 'location'
+    assert config.feature_groups['categorical']['city'] == 'location'
+    
+    # グループごとの特徴量リストの検証
+    assert 'basic_info' in config.group_features['numerical']
+    assert config.group_features['numerical']['basic_info'] == ['age']
+    assert 'basic_info' in config.group_features['categorical']
+    assert config.group_features['categorical']['basic_info'] == ['gender']
+    assert config.group_features['numerical']['physical'] == ['height', 'weight']
 
 @mock.patch('horguesc.utils.config.find_config')
 @mock.patch('configparser.ConfigParser.read')
 def test_load_config(mock_read, mock_find_config):
+    """設定ファイル読み込みをテスト"""
     # find_configの戻り値を設定
     mock_find_config.return_value = 'path/to/config.ini'
     
@@ -87,6 +104,7 @@ def test_load_config(mock_read, mock_find_config):
 
 @mock.patch('horguesc.utils.config.find_config')
 def test_load_config_file_not_found(mock_find_config):
+    """設定ファイルがない場合のエラー処理をテスト"""
     # 設定ファイルが見つからない場合
     mock_find_config.return_value = None
     

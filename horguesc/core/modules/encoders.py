@@ -9,7 +9,8 @@ class FeatureEncoder(nn.Module):
     """特徴量エンコーダークラス。
     
     数値特徴量とカテゴリカル特徴量を処理し、共通の表現に変換します。
-    複数次元の入力にも対応します。
+    エンコードされる特徴量（numerical_featuresとcategorical_featuresに含まれるもの）は
+    同じ形状であることを前提とします。
     """
     
     def __init__(self, config, group_cardinalities=None):
@@ -47,17 +48,19 @@ class FeatureEncoder(nn.Module):
             # グループの埋め込み次元を記録
             self.num_embedding_dims[group_name] = embedding_dim
             
-            # グループ内の特徴量も同じ埋め込み次元を持つ
-            for feature_name in config.group_features['numerical'][group_name]:
-                self.num_embedding_dims[feature_name] = embedding_dim
-                
             logger.debug(f"数値グループ '{group_name}' の埋め込み層を作成: dim={embedding_dim}, "
                         f"特徴量={len(config.group_features['numerical'][group_name])}個")
         
         # カテゴリカル特徴量グループの埋め込み層を初期化
         for group_name in config.group_features['categorical']:
-            # カーディナリティの取得
-            cardinality = self._get_group_cardinality(group_name)
+            try:
+                # カーディナリティの取得を試みる
+                cardinality = self.group_cardinalities[group_name]
+            except KeyError:
+                # カーディナリティが指定されていない場合、デフォルト値を使用して警告
+                cardinality = 100  # デフォルト値
+                logger.warning(f"カテゴリグループ '{group_name}' のカーディナリティが指定されていません。"
+                              f"デフォルト値 ({cardinality}) を使用します。")
             
             # カーディナリティに基づいて埋め込み次元を決定
             embedding_dim = self._suggest_embedding_dim(cardinality)
@@ -71,40 +74,18 @@ class FeatureEncoder(nn.Module):
             # グループの埋め込み次元を記録
             self.cat_embedding_dims[group_name] = embedding_dim
             
-            # グループ内の特徴量も同じ埋め込み次元を持つ
-            for feature_name in config.group_features['categorical'][group_name]:
-                self.cat_embedding_dims[feature_name] = embedding_dim
-            
             logger.debug(f"カテゴリグループ '{group_name}' の埋め込み層を作成: cardinality={cardinality}, "
                        f"dim={embedding_dim}, 特徴量={len(config.group_features['categorical'][group_name])}個")
         
         # 出力次元の計算
-        self.numerical_total_dim = sum(self.num_embedding_dims[feature] for feature in self.config.numerical_features)
-        self.embedding_total_dim = sum(self.cat_embedding_dims[feature] for feature in self.config.categorical_features)
+        self.numerical_total_dim = sum(self.num_embedding_dims[self.feature_groups['numerical'][feature]] 
+                                      for feature in self.config.numerical_features)
+        self.embedding_total_dim = sum(self.cat_embedding_dims[self.feature_groups['categorical'][feature]] 
+                                      for feature in self.config.categorical_features)
         self.output_dim = self.numerical_total_dim + self.embedding_total_dim
         
         logger.info(f"FeatureEncoder 初期化完了: 出力次元={self.output_dim} "
                    f"(数値特徴量={self.numerical_total_dim}, カテゴリ埋め込み={self.embedding_total_dim})")
-    
-    def _get_group_cardinality(self, group_name):
-        """グループのカーディナリティを取得します。
-        
-        Args:
-            group_name: グループの名前
-            
-        Returns:
-            int: カーディナリティ
-        """
-        # 渡されたカーディナリティ情報から取得
-        if self.group_cardinalities and group_name in self.group_cardinalities:
-            cardinality = self.group_cardinalities[group_name]
-            logger.debug(f"グループ {group_name} のカーディナリティをマッピングから取得: {cardinality}")
-            return cardinality
-        
-        # 取得できない場合はデフォルト値を使用
-        cardinality = 10  # デフォルト値
-        logger.debug(f"グループ {group_name} のカーディナリティにデフォルト値を使用: {cardinality}")
-        return cardinality
     
     def _suggest_embedding_dim(self, cardinality):
         """カーディナリティに基づいて適切な埋め込み次元を提案します。
@@ -118,9 +99,6 @@ class FeatureEncoder(nn.Module):
         Returns:
             int: 提案される埋め込み次元
         """
-        if cardinality <= 1:
-            return 2  # 最小埋め込み次元
-            
         # カーディナリティの4乗根を計算（経験則に基づく）
         suggested_dim = int(math.pow(cardinality, 0.25) * 2.0)
         
@@ -136,37 +114,94 @@ class FeatureEncoder(nn.Module):
     def forward(self, features):
         """特徴量を埋め込み表現に変換します。
         
+        エンコードされる特徴量（numerical_featuresとcategorical_featuresに含まれるもの）は
+        同じ形状である必要があります。
+        最後の次元に特徴量埋め込みを追加します。
+        
+        例：入力が (batch_size,) の場合、出力は (batch_size, embedding_dim)
+        例：入力が (batch_size, seq_len) の場合、出力は (batch_size, seq_len, embedding_dim)
+        
         Args:
             features: {'feature_name': tensor, ...}の形式の特徴量辞書
             
         Returns:
             torch.Tensor: 結合された埋め込み表現
         """
-        # 各カテゴリと数値の埋め込み結果を格納するリスト
+        # 各特徴量の埋め込み結果を格納するリスト
         embeddings = []
+        batch_size = None
+        input_shape = None
+        
+        # エンコードする特徴量の形状を確認
+        encoder_features = []
+        for feature_name in features:
+            if feature_name in self.config.numerical_features or feature_name in self.config.categorical_features:
+                encoder_features.append(feature_name)
+                if input_shape is None:
+                    input_shape = features[feature_name].shape
+                    batch_size = input_shape[0]
+        
+        # エンコードする特徴量の形状が一致するか確認
+        for feature_name in encoder_features:
+            if features[feature_name].shape != input_shape:
+                raise ValueError(f"エンコードされる特徴量は同じ形状である必要があります。"
+                               f"'{feature_name}'の形状 {features[feature_name].shape} が"
+                               f"他のエンコード特徴量の形状 {input_shape} と異なります。")
         
         # 各特徴量の埋め込みを計算
-        for feature_name, value in features.items():
+        for feature_name in encoder_features:
+            value = features[feature_name]
+            
             if feature_name in self.config.categorical_features:
                 # この特徴量のグループを特定
                 group_name = self.feature_groups['categorical'][feature_name]
-                embedding = self.categorical_embeddings[group_name](value)
+                
+                # カテゴリ特徴量の埋め込み
+                original_shape = value.shape
+                
+                # 形状を平坦化して埋め込み
+                flat_values = value.view(-1)
+                flat_embeddings = self.categorical_embeddings[group_name](flat_values)
+                
+                # 元の形状に戻す + 埋め込み次元
+                new_shape = list(original_shape) + [flat_embeddings.size(-1)]
+                embedding = flat_embeddings.view(new_shape)
                 embeddings.append(embedding)
                 
             elif feature_name in self.config.numerical_features:
                 # この特徴量のグループを特定
                 group_name = self.feature_groups['numerical'][feature_name]
-                # (batch_size, ...) -> (batch_size, ..., 1) に変換して埋め込み
+                
+                # 数値特徴量の埋め込み
+                original_shape = value.shape
+                
+                # 最後の次元に1を追加
                 value_unsqueezed = value.unsqueeze(-1)
-                embedding = self.numerical_embeddings[group_name](value_unsqueezed)
+                
+                # 形状を平坦化して埋め込み層に渡す
+                flat_shape = (-1, 1)  # (total_elements, 1)
+                flat_values = value_unsqueezed.reshape(flat_shape)
+                
+                # 埋め込み
+                flat_embeddings = self.numerical_embeddings[group_name](flat_values)
+                
+                # 元の形状に戻す
+                embed_dim = flat_embeddings.size(-1)
+                new_shape = list(original_shape) + [embed_dim]
+                embedding = flat_embeddings.reshape(new_shape)
                 embeddings.append(embedding)
         
-        # すべての埋め込みを結合
+        # すべての埋め込みを最後の次元で結合
         if embeddings:
-            # 各埋め込みを平坦化して結合
-            flattened_embeddings = [emb.view(emb.size(0), -1) for emb in embeddings]
-            combined = torch.cat(flattened_embeddings, dim=1)
+            combined = torch.cat(embeddings, dim=-1)
             return combined
         
         # 特徴量がない場合は0テンソルを返す
-        return torch.zeros(1, self.output_dim, device=next(self.parameters()).device)
+        device = next(self.parameters()).device
+        if input_shape:
+            # 入力と同じ形状 + 出力次元
+            output_shape = list(input_shape) + [self.output_dim]
+            return torch.zeros(*output_shape, device=device)
+        else:
+            # デフォルトの形状
+            return torch.zeros(batch_size or 1, self.output_dim, device=device)

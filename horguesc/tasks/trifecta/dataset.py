@@ -35,7 +35,8 @@ class TrifectaDataset(BaseDataset):
         query = """
         SELECT 
         bataiju,
-        ketto_toroku_bango
+        ketto_toroku_bango,
+        kakutei_chakujun as target
         FROM se 
         WHERE 1=1
         """

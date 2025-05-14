@@ -97,9 +97,9 @@ class MultitaskTrainer:
                 # Separate inputs and targets based on their names
                 for key, value in batch.items():
                     if key == 'target' or key.startswith('target_'):
-                        targets[key] = torch.tensor(value, device=self.device)
+                        targets[key] = value.detach().clone().to(self.device) if isinstance(value, torch.Tensor) else torch.tensor(value, device=self.device)
                     else:
-                        inputs[key] = torch.tensor(value, device=self.device)
+                        inputs[key] = value.detach().clone().to(self.device) if isinstance(value, torch.Tensor) else torch.tensor(value, device=self.device)
                 
                 # Forward pass
                 outputs = model(inputs)
@@ -169,9 +169,9 @@ class MultitaskTrainer:
                 # Separate inputs and targets
                 for key, value in val_data.items():
                     if key == 'target' or key.startswith('target_'):
-                        targets[key] = torch.tensor(value, device=self.device)
+                        targets[key] = value.detach().clone().to(self.device) if isinstance(value, torch.Tensor) else torch.tensor(value, device=self.device)
                     else:
-                        inputs[key] = torch.tensor(value, device=self.device)
+                        inputs[key] = value.detach().clone().to(self.device) if isinstance(value, torch.Tensor) else torch.tensor(value, device=self.device)
                 
                 # Forward pass
                 outputs = model(inputs)

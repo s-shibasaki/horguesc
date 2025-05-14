@@ -37,17 +37,15 @@ def run(args):
         val_datasets = {}
         all_parameters = []
 
-        # 共有エンコーダを作成
-        shared_encoder = FeatureEncoder(config)
-        all_parameters.extend(shared_encoder.parameters())
-
-        # データベース操作インスタンスを作成
-        from horguesc.database.operations import DatabaseOperations
-        db_ops = DatabaseOperations(config)
-        logger.info("データベース操作インスタンスを作成しました")
-
         # 設定からタスクを取得
-        tasks = config.get('training', 'tasks').split(',')
+        tasks_str = config.get('tasks', 'active', fallback='')
+        tasks = [task.strip() for task in tasks_str.split(',') if task.strip()]
+        
+        if not tasks:
+            logger.error("アクティブなタスクが設定されていません。tasks.active を設定してください。")
+            return 1
+            
+        logger.info(f"アクティブなタスク: {', '.join(tasks)}")
         
         # 学習・検証データの日付範囲を設定から取得
         train_start = config.get('training', 'train_start_date')
@@ -71,7 +69,6 @@ def run(args):
                 # トレーニング用データセットの作成
                 train_dataset = dataset_class(
                     config=config,
-                    db_ops=db_ops,
                     mode='train',
                     batch_size=batch_size,
                     start_date=train_start,
@@ -81,7 +78,6 @@ def run(args):
                 # 検証用データセットの作成
                 val_dataset = dataset_class(
                     config=config,
-                    db_ops=db_ops,
                     mode='eval',
                     batch_size=batch_size,
                     start_date=val_start,
@@ -107,6 +103,12 @@ def run(args):
         # Step 2: 収集した特徴量でエンコーダーをフィット
         logger.info("全データセットから収集した特徴量でエンコーダーをフィットします")
         feature_processor.fit()
+        
+        # 変更: 特徴量プロセッサでフィットした後に共有エンコーダを作成
+        # 特徴量プロセッサでフィットした後に共有エンコーダを作成
+        group_cardinalities = feature_processor.get_group_cardinalities()
+        shared_encoder = FeatureEncoder(config, group_cardinalities)
+        all_parameters.extend(shared_encoder.parameters())
         
         # Step 3: 各データセットのデータを処理
         for task in tasks:

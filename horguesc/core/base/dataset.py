@@ -19,7 +19,9 @@ class BaseDataset(abc.ABC):
                  batch_size: int = 32,
                  start_date: Optional[Union[str, datetime]] = None, 
                  end_date: Optional[Union[str, datetime]] = None,
-                 random_seed: Optional[int] = None):
+                 random_seed: Optional[int] = None,
+                 *args,
+                 **kwargs):
         """初期化
         
         Args:
@@ -54,19 +56,32 @@ class BaseDataset(abc.ABC):
         self._next_batch_index = 0
         self.batch_size = batch_size
         
+        # 追加の引数を保存
+        self.args = args
+        self.kwargs = kwargs
+        
         # 初期化時の情報をログに記録
         logger.info(f"{self.get_name()} データセット - モード: {self.mode}")
     
     # 公開API - データアクセスと処理のフロー
     
-    def fetch_data(self) -> 'BaseDataset':
-        """データを取得します。"""
+    def fetch_data(self, *args, **kwargs) -> 'BaseDataset':
+        """データを取得します。
+        
+        Args:
+            *args: データ取得時に渡す任意の位置引数
+            **kwargs: データ取得時に渡す任意のキーワード引数
+        """
         if self.raw_data is None:
-            self._fetch_data()
+            self._fetch_data(*args, **kwargs)
             
             if self.raw_data is None:
-                raise ValueError(f"{self.get_name()} データセットの _fetch_data() メソッドが raw_data を設定していません")
-        
+                logger.warning(f"{self.get_name()} データ取得結果が空でした")
+                self.raw_data = {}
+            else:
+                # データ取得後に数値特徴量を float32 型に変換
+                self._convert_numerical_features_to_float()
+    
         return self
     
     def collect_features(self, feature_processor: Any) -> 'BaseDataset':
@@ -142,8 +157,8 @@ class BaseDataset(abc.ABC):
         processed = {}
         
         # 設定から特徴量情報を取得
-        numerical_features = self.config.get_numerical_feature_names()
-        categorical_features = self.config.get_categorical_feature_names()
+        numerical_features = self.config.numerical_features
+        categorical_features = self.config.categorical_features
         
         # 数値特徴量の処理
         for feature_name in numerical_features:
@@ -211,11 +226,66 @@ class BaseDataset(abc.ABC):
     # 抽象メソッド - サブクラスで必ず実装する必要あり
     
     @abc.abstractmethod
-    def _fetch_data(self) -> None:
-        """データを取得し、self.raw_dataに格納します。サブクラスで実装する必要があります。"""
+    def _fetch_data(self, *args, **kwargs) -> None:
+        """データを取得し、self.raw_dataに格納します。
+        
+        実装時の必須ルール:
+        1. モデル入力特徴量は、horguesc.ini で定義した特徴量名と完全に一致させる
+        2. ターゲットカラムは基本的に 'target' という名前で格納する
+           (複数ターゲットがある場合など例外的にのみ他の名前を使用可)
+        3. self.raw_data に辞書形式でデータを格納する
+        4. 各特徴量のデータは NumPy 配列 (np.ndarray) として格納する
+           (データ処理パイプラインが NumPy 配列を想定して設計されているため)
+           - 1次元配列だけでなく、多次元配列 (2D, 3D等) も必要に応じて使用可能
+    
+        データ構造の例:
+        self.raw_data = {
+            'feature_name_1': np.array([...]),               # 1次元数値特徴量
+            'feature_name_2': np.array([...]),               # カテゴリカル特徴量
+            'feature_name_3': np.array([[...], [...]]),      # 2次元数値特徴量
+            'feature_name_4': np.array([[[...], [...]]]),    # 3次元数値特徴量 
+            'target': np.array([...])                        # ターゲット変数
+        }
+        
+        Args:
+            *args: データ取得時に渡される任意の位置引数
+            **kwargs: データ取得時に渡される任意のキーワード引数
+        """
+        # サブクラスで実装
         pass
     
     @abc.abstractmethod
     def get_name(self) -> str:
         """データセットの名前を取得します。"""
         pass
+
+    def _convert_numerical_features_to_float(self) -> None:
+        """数値特徴量を float32 型に変換します。None や非数値は np.nan に変換します."""
+        if not hasattr(self.config, 'numerical_features') or not self.raw_data:
+            return
+            
+        for feature_name in self.config.numerical_features:
+            if feature_name in self.raw_data:
+                original = self.raw_data[feature_name]
+                
+                # 変換処理
+                values = []
+                for value in original.flatten() if original.ndim > 1 else original:
+                    try:
+                        # Noneまたは変換できない値はnp.nanにする
+                        if value is None:
+                            values.append(np.nan)
+                        else:
+                            values.append(float(value))
+                    except (ValueError, TypeError):
+                        values.append(np.nan)
+                
+                # 元の形状を維持して配列を作り直す
+                converted = np.array(values, dtype=np.float32)
+                if original.ndim > 1:
+                    converted = converted.reshape(original.shape)
+                    
+                # 変換後の配列に置き換え
+                self.raw_data[feature_name] = converted
+                
+                logger.debug(f"数値特徴量 '{feature_name}' を float32 型に自動変換しました")

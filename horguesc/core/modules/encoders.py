@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -11,143 +12,161 @@ class FeatureEncoder(nn.Module):
     複数次元の入力にも対応します。
     """
     
-    def __init__(self, config):
+    def __init__(self, config, group_cardinalities=None):
         """
         Args:
             config: アプリケーション設定
+            group_cardinalities: グループ名とカーディナリティのマッピング辞書
         """
         super().__init__()
         self.config = config
+        self.group_cardinalities = group_cardinalities or {}
         
-        # 数値特徴量の埋め込み層
-        self.numerical_feature_names = self.config.get_numerical_feature_names()
+        # 特徴量のグループ情報を取得
+        self.feature_groups = config.feature_groups
+        
+        # デフォルトの埋め込み次元
+        self.default_numerical_dim = config.getint('model', 'numerical_embedding_dim', fallback=8)
+        
+        # 埋め込み層を一元管理 (グループごとに作成)
         self.numerical_embeddings = nn.ModuleDict()
-        self.num_embedding_dims = {}
-        for name, info in self.config.numerical_features.items():
-            embedding_dim = info['embedding_dim']
-            self.num_embedding_dims[name] = embedding_dim
-            
-            self.numerical_embeddings[name] = nn.Sequential(
-                nn.Linear(1, embedding_dim),
-                nn.ReLU()  # 非線形性を追加
-            )
-            logger.debug(f"数値特徴量 {name} の埋め込み層を作成: dim={embedding_dim}")
+        self.categorical_embeddings = nn.ModuleDict()
         
-        # カテゴリカル特徴量の埋め込み層と情報を保存
-        self.categorical_feature_names = self.config.get_categorical_feature_names()
-        self.embedding_layers = nn.ModuleDict()
+        # 埋め込み次元の記録
+        self.num_embedding_dims = {}
         self.cat_embedding_dims = {}
-        for name, info in self.config.categorical_features.items():
-            cardinality = info['cardinality']
-            embedding_dim = info['embedding_dim']
-            self.cat_embedding_dims[name] = embedding_dim
+        
+        # 数値特徴量グループの埋め込み層を初期化
+        for group_name in config.group_features['numerical']:
+            embedding_dim = self.default_numerical_dim
             
-            # カーディナリティ+1で初期化（0はNone/未知の値用）
-            self.embedding_layers[name] = nn.Embedding(
-                num_embeddings=cardinality + 1,
+            self.numerical_embeddings[group_name] = nn.Sequential(
+                nn.Linear(1, embedding_dim),
+                nn.ReLU()
+            )
+            # グループの埋め込み次元を記録
+            self.num_embedding_dims[group_name] = embedding_dim
+            
+            # グループ内の特徴量も同じ埋め込み次元を持つ
+            for feature_name in config.group_features['numerical'][group_name]:
+                self.num_embedding_dims[feature_name] = embedding_dim
+                
+            logger.debug(f"数値グループ '{group_name}' の埋め込み層を作成: dim={embedding_dim}, "
+                        f"特徴量={len(config.group_features['numerical'][group_name])}個")
+        
+        # カテゴリカル特徴量グループの埋め込み層を初期化
+        for group_name in config.group_features['categorical']:
+            # カーディナリティの取得
+            cardinality = self._get_group_cardinality(group_name)
+            
+            # カーディナリティに基づいて埋め込み次元を決定
+            embedding_dim = self._suggest_embedding_dim(cardinality)
+            
+            self.categorical_embeddings[group_name] = nn.Embedding(
+                num_embeddings=cardinality + 1,  # +1 はパディング/不明な値用
                 embedding_dim=embedding_dim,
                 padding_idx=0
             )
-            logger.debug(f"特徴量 {name} の埋め込み層を作成: cardinality={cardinality}, dim={embedding_dim}")
+            
+            # グループの埋め込み次元を記録
+            self.cat_embedding_dims[group_name] = embedding_dim
+            
+            # グループ内の特徴量も同じ埋め込み次元を持つ
+            for feature_name in config.group_features['categorical'][group_name]:
+                self.cat_embedding_dims[feature_name] = embedding_dim
+            
+            logger.debug(f"カテゴリグループ '{group_name}' の埋め込み層を作成: cardinality={cardinality}, "
+                       f"dim={embedding_dim}, 特徴量={len(config.group_features['categorical'][group_name])}個")
         
-        # 出力次元の計算 - 保存した情報を使用
-        self.numerical_total_dim = sum(self.num_embedding_dims.values())
-        self.embedding_total_dim = sum(self.cat_embedding_dims.values())
+        # 出力次元の計算
+        self.numerical_total_dim = sum(self.num_embedding_dims[feature] for feature in self.config.numerical_features)
+        self.embedding_total_dim = sum(self.cat_embedding_dims[feature] for feature in self.config.categorical_features)
         self.output_dim = self.numerical_total_dim + self.embedding_total_dim
         
         logger.info(f"FeatureEncoder 初期化完了: 出力次元={self.output_dim} "
                    f"(数値特徴量={self.numerical_total_dim}, カテゴリ埋め込み={self.embedding_total_dim})")
     
-    def forward(self, features):
-        """特徴量エンコーディングの順伝播。
+    def _get_group_cardinality(self, group_name):
+        """グループのカーディナリティを取得します。
         
         Args:
-            features: 特徴量の辞書
-                - 数値特徴量: (batch_size, [additional_dim_1, ..., additional_dim_n]) のテンソル（NaNを含む可能性あり）
-                - カテゴリカル特徴量: (batch_size, [additional_dim_1, ..., additional_dim_n]) のインデックスのテンソル
-        
+            group_name: グループの名前
+            
         Returns:
-            torch.Tensor: エンコードされた特徴量 (batch_size, [additional_dim_1, ..., additional_dim_n,] output_dim)
+            int: カーディナリティ
         """
-        # バッチサイズとデバイスの取得
-        first_tensor = next(iter(features.values()))
-        batch_size = first_tensor.shape[0]
-        device = first_tensor.device
+        # 渡されたカーディナリティ情報から取得
+        if self.group_cardinalities and group_name in self.group_cardinalities:
+            cardinality = self.group_cardinalities[group_name]
+            logger.debug(f"グループ {group_name} のカーディナリティをマッピングから取得: {cardinality}")
+            return cardinality
         
-        # 入力の追加次元を抽出
-        additional_dims = []
-        if first_tensor.dim() > 1:
-            additional_dims = list(first_tensor.shape[1:])
+        # 取得できない場合はデフォルト値を使用
+        cardinality = 10  # デフォルト値
+        logger.debug(f"グループ {group_name} のカーディナリティにデフォルト値を使用: {cardinality}")
+        return cardinality
+    
+    def _suggest_embedding_dim(self, cardinality):
+        """カーディナリティに基づいて適切な埋め込み次元を提案します。
         
-        # 出力テンソルのサイズを計算
-        output_shape = [batch_size] + additional_dims + [self.output_dim]
-        additional_shape = [batch_size] + additional_dims
+        一般的なルールとして、カーディナリティの4乗根に基づいて埋め込み次元を決定します。
+        また、2の倍数に丸めて効率的な実装を可能にします。
         
-        # 数値特徴量の処理
-        numerical_embeddings = []
-        for name in self.numerical_feature_names:
-            if name in features and name in self.numerical_embeddings:
-                values = features[name]
-                original_shape = values.shape
-                
-                # NaNを検出してマスクを作成
-                mask = ~torch.isnan(values)
-                
-                # NaNを0に置換
-                values = torch.nan_to_num(values, nan=0.0)
-                
-                # テンソルをフラット化して処理
-                flat_values = values.reshape(-1, 1)
-                flat_mask = mask.reshape(-1, 1)
-                
-                # Linear埋め込み層を適用
-                embedded = self.numerical_embeddings[name](flat_values)
-                
-                # マスクを拡張して埋め込み次元に合わせる
-                expanded_mask = flat_mask.expand_as(embedded)
-                
-                # マスクを適用（欠損値の埋め込みを0に）
-                masked_embedding = embedded * expanded_mask.float()
-                
-                # 元の形状に戻して埋め込み次元を新たな次元として追加
-                # (batch_size, [additional_dims]) -> (batch_size, [additional_dims], embedding_dim)
-                embedding_dim = self.num_embedding_dims[name]
-                reshaped_embedding = masked_embedding.reshape(*original_shape, embedding_dim)
-                numerical_embeddings.append(reshaped_embedding)
+        Args:
+            cardinality: カテゴリの数
+            
+        Returns:
+            int: 提案される埋め込み次元
+        """
+        if cardinality <= 1:
+            return 2  # 最小埋め込み次元
+            
+        # カーディナリティの4乗根を計算（経験則に基づく）
+        suggested_dim = int(math.pow(cardinality, 0.25) * 2.0)
         
-        # 数値特徴量の埋め込みがない場合は0テンソルを使用
-        if not numerical_embeddings:
-            numerical_encoded = torch.zeros((*additional_shape, 0), device=device)
-        else:
-            numerical_encoded = torch.cat(numerical_embeddings, dim=-1)
+        # 2の倍数に切り上げ
+        if suggested_dim % 2 != 0:
+            suggested_dim += 1
+            
+        # 最小/最大の制限
+        suggested_dim = max(2, min(50, suggested_dim))
         
-        # カテゴリカル特徴量の埋め込み
-        categorical_embeddings = []
-        for name in self.categorical_feature_names:
-            if name in features and name in self.embedding_layers:
-                # インデックスを取得
-                indices = features[name]
-                original_shape = indices.shape
+        return suggested_dim
+        
+    def forward(self, features):
+        """特徴量を埋め込み表現に変換します。
+        
+        Args:
+            features: {'feature_name': tensor, ...}の形式の特徴量辞書
+            
+        Returns:
+            torch.Tensor: 結合された埋め込み表現
+        """
+        # 各カテゴリと数値の埋め込み結果を格納するリスト
+        embeddings = []
+        
+        # 各特徴量の埋め込みを計算
+        for feature_name, value in features.items():
+            if feature_name in self.config.categorical_features:
+                # この特徴量のグループを特定
+                group_name = self.feature_groups['categorical'][feature_name]
+                embedding = self.categorical_embeddings[group_name](value)
+                embeddings.append(embedding)
                 
-                # テンソルをフラット化して処理
-                flat_indices = indices.reshape(-1)
-                
-                # 埋め込み適用
-                embedding = self.embedding_layers[name](flat_indices)
-                
-                # 元の形状に戻して埋め込み次元を新たな次元として追加
-                # (batch_size, [additional_dims]) -> (batch_size, [additional_dims], embedding_dim)
-                embedding_dim = self.cat_embedding_dims[name]
-                reshaped_embedding = embedding.reshape(*original_shape, embedding_dim)
-                categorical_embeddings.append(reshaped_embedding)
+            elif feature_name in self.config.numerical_features:
+                # この特徴量のグループを特定
+                group_name = self.feature_groups['numerical'][feature_name]
+                # (batch_size, ...) -> (batch_size, ..., 1) に変換して埋め込み
+                value_unsqueezed = value.unsqueeze(-1)
+                embedding = self.numerical_embeddings[group_name](value_unsqueezed)
+                embeddings.append(embedding)
         
-        # カテゴリカル埋め込みがない場合は0テンソルを使用
-        if not categorical_embeddings:
-            categorical_encoded = torch.zeros((*additional_shape, 0), device=device)
-        else:
-            categorical_encoded = torch.cat(categorical_embeddings, dim=-1)
+        # すべての埋め込みを結合
+        if embeddings:
+            # 各埋め込みを平坦化して結合
+            flattened_embeddings = [emb.view(emb.size(0), -1) for emb in embeddings]
+            combined = torch.cat(flattened_embeddings, dim=1)
+            return combined
         
-        # 数値特徴量とカテゴリカル特徴量の埋め込みを連結
-        encoded_features = torch.cat([numerical_encoded, categorical_encoded], dim=-1)
-        
-        return encoded_features
+        # 特徴量がない場合は0テンソルを返す
+        return torch.zeros(1, self.output_dim, device=next(self.parameters()).device)

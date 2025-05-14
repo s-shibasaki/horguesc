@@ -3,6 +3,7 @@ Database operations for horguesc.
 """
 import logging
 from .connection import DatabaseConnection
+import psycopg2.extras  # 追加: psycopg2.extrasをインポート
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class DatabaseOperations:
         """
         self.db_conn = DatabaseConnection.get_instance(config)
     
-    def execute_query(self, query, params=None, fetch_all=False):
+    def execute_query(self, query, params=None, fetch_all=False, as_dict=False):
         """
         Execute a SQL query and return the results.
         
@@ -26,6 +27,7 @@ class DatabaseOperations:
             query (str): The SQL query to execute
             params (tuple, optional): Parameters for the query
             fetch_all (bool): Whether to fetch all results or just one
+            as_dict (bool): Whether to return results as dictionaries
         
         Returns:
             The query results
@@ -35,7 +37,10 @@ class DatabaseOperations:
                 params = tuple(params)
                 
             with self.db_conn.get_connection() as conn:
-                cursor = conn.cursor()
+                # as_dictがTrueの場合、DictCursorを使用
+                cursor_factory = psycopg2.extras.DictCursor if as_dict else None
+                cursor = conn.cursor(cursor_factory=cursor_factory)
+                
                 cursor.execute(query, params)
                 
                 if fetch_all:

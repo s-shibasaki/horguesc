@@ -11,6 +11,13 @@ class TrifectaModel(BaseModel):
     """
     3連単予測モデル。
     各レースの出走馬から1〜3着の順番を予測する。
+    
+    # TODO: このモデルはGitHub Copilotによって自動生成されたコードです。
+    # TODO: 内容の検証とロジックの確認が必要です。
+    # TODO: 特に注目すべき点:
+    #   - 注意機構のパラメータ設定の妥当性
+    #   - 馬同士の関係性の学習手法
+    #   - 出力層の設計
     """
     
     def __init__(self, config, encoder):
@@ -76,10 +83,16 @@ class TrifectaModel(BaseModel):
         # エンコーダーで特徴量を埋め込み表現に変換
         embedded = self.encoder(inputs)  # (batch_size, max_horses, embed_dim)
         
+        # Check for NaN values
+        self.check_tensor("embedded", embedded)
+        
         batch_size, max_horses, _ = embedded.shape
         
         # 各馬の特徴を処理
         horse_features = self.horse_network(embedded)  # (batch_size, max_horses, hidden_dim)
+        
+        # Check for NaN values
+        self.check_tensor("horse_features", horse_features)
         
         # 注意機構で馬同士の関係性を学習
         attended_features, _ = self.attention(
@@ -87,8 +100,14 @@ class TrifectaModel(BaseModel):
             key_padding_mask=(umaban == 0)  # パディング（umaban=0）部分をマスク
         )
         
+        # Check for NaN values
+        self.check_tensor("attended_features", attended_features)
+        
         # 最終的な各馬の表現を取得（残差接続で元の特徴と結合）
         final_features = horse_features + attended_features  # (batch_size, max_horses, hidden_dim)
+        
+        # Check for NaN values
+        self.check_tensor("final_features", final_features)
         
         # 欠損値の処理（パディングされた部分の特徴量をゼロにする）
         mask = (umaban != 0).unsqueeze(-1).float()  # (batch_size, max_horses, 1)
@@ -129,6 +148,9 @@ class TrifectaModel(BaseModel):
         
         # バッチ全体のロジットをテンソルにまとめる
         logits = torch.stack(all_logits)  # (batch_size, num_permutations)
+        
+        # Check for NaN values
+        self.check_tensor("logits", logits)
         
         return {
             'logits': logits,
@@ -177,3 +199,22 @@ class TrifectaModel(BaseModel):
         return {
             'accuracy': accuracy
         }
+    
+    def check_tensor(self, tensor_name, tensor):
+        """
+        テンソルにNaN値が含まれているかチェックし、ログに記録
+        
+        Args:
+            tensor_name (str): テンソルの名前
+            tensor (torch.Tensor): チェック対象のテンソル
+            
+        Returns:
+            bool: NaN値が含まれている場合はTrue、それ以外はFalse
+        """
+        if torch.isnan(tensor).any():
+            logger.error(f"NaN detected in {tensor_name}")
+            non_nan_mask = ~torch.isnan(tensor)
+            if non_nan_mask.any():
+                logger.error(f"Non-NaN values in {tensor_name}: min={tensor[non_nan_mask].min()}, max={tensor[non_nan_mask].max()}")
+            return True
+        return False

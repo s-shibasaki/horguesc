@@ -11,6 +11,12 @@ class FeatureEncoder(nn.Module):
     数値特徴量とカテゴリカル特徴量を処理し、共通の表現に変換します。
     エンコードされる特徴量（numerical_featuresとcategorical_featuresに含まれるもの）は
     同じ形状であることを前提とします。
+    
+    入力データ仕様:
+    - 数値特徴量: NaN値を含むことが許容されます。内部でこれらのNaN値は検出され、
+      埋め込み時に0にマスクされます。出力にNaN値が伝播しないよう処理されます。
+    - カテゴリカル特徴量: 0はパディングや不明値を表します。0以外の正の整数値が
+      カテゴリのインデックスとして使用されます。
     """
     
     def __init__(self, config, group_cardinalities=None):
@@ -121,6 +127,12 @@ class FeatureEncoder(nn.Module):
         例：入力が (batch_size,) の場合、出力は (batch_size, embedding_dim)
         例：入力が (batch_size, seq_len) の場合、出力は (batch_size, seq_len, embedding_dim)
         
+        データの仕様:
+        - 数値特徴量: NaN値を含むことができます。NaN値は検出され、0に置き換えられます。
+          その後、NaN値に対応する位置の埋め込みベクトルが0にマスクされます。
+        - カテゴリカル特徴量: 0は特別な値で、パディングや不明値を表します。
+          0以外の整数値（1からcardinality）がカテゴリのインデックスとして使用されます。
+        
         Args:
             features: {'feature_name': tensor, ...}の形式の特徴量辞書
             
@@ -175,12 +187,16 @@ class FeatureEncoder(nn.Module):
                 # 数値特徴量の埋め込み
                 original_shape = value.shape
                 
+                # NaN値を0に置き換えてマスクを作成（NaNの位置を記録）
+                mask = ~torch.isnan(value)
+                clean_value = torch.where(mask, value, torch.zeros_like(value))
+                
                 # 最後の次元に1を追加
-                value_unsqueezed = value.unsqueeze(-1)
+                clean_value_unsqueezed = clean_value.unsqueeze(-1)
                 
                 # 形状を平坦化して埋め込み層に渡す
                 flat_shape = (-1, 1)  # (total_elements, 1)
-                flat_values = value_unsqueezed.reshape(flat_shape)
+                flat_values = clean_value_unsqueezed.reshape(flat_shape)
                 
                 # 埋め込み
                 flat_embeddings = self.numerical_embeddings[group_name](flat_values)
@@ -189,6 +205,13 @@ class FeatureEncoder(nn.Module):
                 embed_dim = flat_embeddings.size(-1)
                 new_shape = list(original_shape) + [embed_dim]
                 embedding = flat_embeddings.reshape(new_shape)
+                
+                # NaN値があった位置を0にマスク（マスクを拡張して埋め込み次元にも適用）
+                if not mask.all():
+                    # マスクを埋め込み次元に合わせて拡張
+                    expanded_mask = mask.unsqueeze(-1).expand_as(embedding)
+                    embedding = embedding * expanded_mask
+                
                 embeddings.append(embedding)
         
         # すべての埋め込みを最後の次元で結合

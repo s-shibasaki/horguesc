@@ -157,3 +157,28 @@ class TestFeatureEncoder:
             assert dim <= 50     # 最大値は50
             # 期待される値の範囲内に収まっていることを確認（厳密な値ではなく範囲をチェック）
             assert abs(dim - expected_range) <= 4
+    
+    def test_forward_with_nan_values(self, mock_config, group_cardinalities):
+        """NaN値が含まれる入力での順伝播をテスト"""
+        encoder = FeatureEncoder(mock_config, group_cardinalities)
+        batch_size = 2
+        
+        # NaN値を含むテスト用の入力特徴量を作成
+        features = {
+            "age": torch.tensor([25.0, float('nan')]),
+            "income": torch.tensor([float('nan'), 60000.0]),
+            "gender": torch.tensor([1, 2]),
+            "country": torch.tensor([5, 0]),  # 0はパディング/不明値
+            "target": torch.tensor([0, 1])    # エンコードされない追加データ
+        }
+        
+        # 順伝播 - エラーなく実行できることを確認
+        output = encoder(features)
+        
+        # 出力形状の確認
+        assert output.dim() == 2
+        assert output.shape[0] == batch_size
+        assert output.shape[1] == encoder.output_dim
+        
+        # NaNを含む出力がないことを確認
+        assert not torch.isnan(output).any(), "出力にNaN値が含まれています"

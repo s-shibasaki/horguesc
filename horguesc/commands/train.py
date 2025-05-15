@@ -7,27 +7,25 @@ import os
 import torch
 from importlib import import_module
 from horguesc.core.modules.encoders import FeatureEncoder
-from horguesc.utils.config import load_config
 from horguesc.core.trainer import MultitaskTrainer
 from horguesc.core.features.processor import FeatureProcessor
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def run(args):
+def run(config):
     """
     トレインコマンドを実行します。
     
     Args:
-        args: コマンドライン引数
+        config: アプリケーションの設定（CLI側で引数から更新済み）
         
     Returns:
         int: 終了コード
     """
     try:
-        # 設定を読み込み
-        config = load_config()
         logger.info("設定を正常に読み込みました")
-
+        
         # 共通の特徴量プロセッサを作成
         feature_processor = FeatureProcessor(config)
 
@@ -74,26 +72,32 @@ def run(args):
                     end_date=train_end
                 )
                 
-                # 検証用データセットの作成
-                val_dataset = dataset_class(
-                    config=config,
-                    mode='eval',
-                    batch_size=batch_size,
-                    start_date=val_start,
-                    end_date=val_end
-                )
-                
                 # データを取得
                 train_dataset.fetch_data()
-                val_dataset.fetch_data()
                 
                 # 訓練データのみで特徴量値を収集
                 train_dataset.collect_features(feature_processor)
                 
                 train_datasets[task] = train_dataset
-                val_datasets[task] = val_dataset
                 
-                logger.info(f"{task} データセットを初期化して生データを取得しました")
+                logger.info(f"{task} 訓練データセットを初期化して生データを取得しました")
+                
+                # 検証をスキップしない場合のみ検証データセットを作成
+                skip_validation = config.getboolean('training', 'skip_validation', fallback=False)
+                if not skip_validation:
+                    # 検証用データセットの作成
+                    val_dataset = dataset_class(
+                        config=config,
+                        mode='eval',
+                        batch_size=batch_size,
+                        start_date=val_start,
+                        end_date=val_end
+                    )
+                    
+                    # データを取得
+                    val_dataset.fetch_data()
+                    val_datasets[task] = val_dataset
+                    logger.info(f"{task} 検証データセットを初期化して生データを取得しました")
                 
             except (ImportError, AttributeError) as e:
                 logger.error(f"タスク {task} の初期化に失敗しました: {e}")
@@ -103,7 +107,6 @@ def run(args):
         logger.info("全データセットから収集した特徴量でエンコーダーをフィットします")
         feature_processor.fit()
         
-        # 変更: 特徴量プロセッサでフィットした後に共有エンコーダを作成
         # 特徴量プロセッサでフィットした後に共有エンコーダを作成
         group_cardinalities = feature_processor.get_group_cardinalities()
         shared_encoder = FeatureEncoder(config, group_cardinalities)
@@ -111,8 +114,12 @@ def run(args):
         # Step 3: 各データセットのデータを処理
         for task in tasks:
             train_datasets[task].process_features(feature_processor)
-            val_datasets[task].process_features(feature_processor)
-            logger.info(f"{task} データセットの特徴量処理を完了しました")
+            logger.info(f"{task} 訓練データセットの特徴量処理を完了しました")
+            
+            # 検証データセットがある場合のみ処理
+            if task in val_datasets:
+                val_datasets[task].process_features(feature_processor)
+                logger.info(f"{task} 検証データセットの特徴量処理を完了しました")
         
         # エンコーダを保存（後で検証/推論に使用）
         encoder_path = os.path.join(config.get('paths', 'model_dir', fallback='models'), 'feature_processor.pt')
@@ -163,13 +170,24 @@ def run(args):
         combined_datasets = {}
         for task in tasks:
             combined_datasets[f"{task}.train"] = train_datasets[task]  # 学習用データセット
-            combined_datasets[f"{task}.eval"] = val_datasets[task]     # 評価用データセット
+            if task in val_datasets:
+                combined_datasets[f"{task}.eval"] = val_datasets[task]  # 評価用データセット
         
         # トレーナーを初期化してモデルをトレーニング
         trainer = MultitaskTrainer(config, models, combined_datasets, optimizer)
         num_epochs = config.getint('training', 'num_epochs', fallback=10)
-        trainer.train(num_epochs)
         
+        # モデルトレーニングを実行（最終的な評価指標を取得）
+        # トレーナーが内部で各エポック後にモデル保存を行う
+        final_metrics = trainer.train(num_epochs)  
+
+        # 最終的な評価指標をログに出力
+        if final_metrics:
+            logger.info("トレーニングの最終結果:")
+            for task_name, metrics in final_metrics.items():
+                metrics_str = ", ".join(f"{k}: {v:.4f}" for k, v in metrics.items())
+                logger.info(f"  {task_name}: {metrics_str}")
+
         logger.info("トレーニングが正常に完了しました")
         return 0
         

@@ -2,6 +2,9 @@ import logging
 import torch
 from collections import defaultdict
 import configparser
+import numpy as np
+import os
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -35,22 +38,94 @@ class MultitaskTrainer:
                 if task_name not in self.task_datasets:
                     self.task_datasets[task_name] = {}
                 self.task_datasets[task_name][mode] = dataset
-    
+        
+        # For tracking best model metrics
+        self.best_metrics = {}
+        self.best_epoch = -1
+        
     def train(self, num_epochs):
         """Train all models for the specified number of epochs.
         
         Args:
             num_epochs: Number of training epochs
+            
+        Returns:
+            dict: Final metrics from the last validation epoch if validation was performed, otherwise empty dict
         """
         logger.info(f"Starting multi-task training for {num_epochs} epochs")
         
+        final_metrics = {}
+        
+        # Check if we should save models after each epoch
+        save_each_epoch = self.config.getboolean('training', 'save_each_epoch', fallback=False)
+        
+        # Check if validation should be skipped
+        skip_validation = self.config.getboolean('training', 'skip_validation', fallback=False)
+        if skip_validation:
+            logger.info("Validation will be skipped as requested")
+        
+        # Generate base path prefix for model saving
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        base_path_prefix = f"model_{timestamp}"
+        
         for epoch in range(num_epochs):
             self._train_epoch(epoch)
-            self._validate_epoch(epoch)
             
-            # Save models after each epoch if configured
-            if self.config.getboolean('training', 'save_each_epoch', fallback=False):
-                self._save_models(epoch)
+            # Only perform validation if not skipped
+            if not skip_validation:
+                metrics = self._validate_epoch(epoch)
+                final_metrics = metrics  # 最後のエポックの評価指標を保存
+            
+            # Save model after each epoch if configured to do so
+            if save_each_epoch:
+                # Create epoch-specific path prefix
+                epoch_path_prefix = f"{base_path_prefix}_epoch{epoch+1}"
+                
+                logger.info(f"Saving models for epoch {epoch+1}...")
+                self.save_models(epoch_path_prefix)
+                logger.info(f"Models for epoch {epoch+1} saved successfully")
+    
+        # After all epochs, save the final model if not already saved
+        if not save_each_epoch:
+            final_path_prefix = f"{base_path_prefix}_final"
+            logger.info("Saving final models...")
+            self.save_models(final_path_prefix)
+            logger.info("Final models saved successfully")
+            
+        return final_metrics
+    
+    def _check_if_best_epoch(self, metrics, epoch):
+        """Check if current epoch is the best so far based on validation metrics.
+        
+        Args:
+            metrics: Current epoch metrics
+            epoch: Current epoch number
+            
+        Returns:
+            bool: True if this is the best epoch so far
+        """
+        # For initial implementation, use simple averaging of all loss values
+        avg_loss = 0
+        loss_count = 0
+        
+        for task_name, task_metrics in metrics.items():
+            if 'loss' in task_metrics:
+                avg_loss += task_metrics['loss']
+                loss_count += 1
+                
+        if loss_count == 0:
+            return False
+            
+        avg_loss = avg_loss / loss_count
+        
+        # Check if this is the best loss so far
+        if not hasattr(self, 'best_loss') or avg_loss < self.best_loss:
+            self.best_loss = avg_loss
+            self.best_epoch = epoch
+            self.best_metrics = metrics.copy()
+            return True
+            
+        return False
     
     def _train_epoch(self, epoch):
         """Train all models for one epoch.
@@ -98,9 +173,19 @@ class MultitaskTrainer:
                 # Separate inputs and targets based on their names
                 for key, value in batch.items():
                     if key == 'target' or key.startswith('target_'):
-                        targets[key] = value.detach().clone().to(self.device) if isinstance(value, torch.Tensor) else torch.tensor(value, device=self.device)
+                        # Target data - these should already be tensors from BaseDataset
+                        if isinstance(value, torch.Tensor):
+                            targets[key] = value.to(self.device)
+                        else:
+                            # For non-tensor targets, just pass them as-is
+                            targets[key] = value
                     else:
-                        inputs[key] = value.detach().clone().to(self.device) if isinstance(value, torch.Tensor) else torch.tensor(value, device=self.device)
+                        # Input data
+                        if isinstance(value, torch.Tensor):
+                            inputs[key] = value.to(self.device)
+                        else:
+                            # For non-tensor inputs, just pass them as-is
+                            inputs[key] = value
                 
                 # Forward pass
                 outputs = model(inputs)
@@ -131,11 +216,11 @@ class MultitaskTrainer:
             
             log_interval = self.config.getint('training', 'log_interval', fallback=10)
             if step % log_interval == 0:
-                logger.info(f"Epoch {epoch}, Step {step}/{steps}, Loss: {combined_loss.item():.4f}")
+                logger.info(f"Epoch {epoch+1}, Step {step}/{steps}, Loss: {combined_loss.item():.4f}")
         
         # Log epoch results
         avg_loss = total_loss / steps
-        logger.info(f"Epoch {epoch} completed, Avg Loss: {avg_loss:.4f}")
+        logger.info(f"Epoch {epoch+1} completed, Avg Loss: {avg_loss:.4f}")
         for task_name, loss in task_losses.items():
             logger.info(f"  {task_name} loss: {loss/steps:.4f}")
     
@@ -144,6 +229,9 @@ class MultitaskTrainer:
         
         Args:
             epoch: Current epoch number
+            
+        Returns:
+            dict: Validation metrics
         """
         # Set all models to evaluation mode
         for model in self.models.values():
@@ -170,9 +258,19 @@ class MultitaskTrainer:
                 # Separate inputs and targets
                 for key, value in val_data.items():
                     if key == 'target' or key.startswith('target_'):
-                        targets[key] = value.detach().clone().to(self.device) if isinstance(value, torch.Tensor) else torch.tensor(value, device=self.device)
+                        # Target data - these should already be tensors from BaseDataset
+                        if isinstance(value, torch.Tensor):
+                            targets[key] = value.to(self.device)
+                        else:
+                            # For non-tensor targets, just pass them as-is
+                            targets[key] = value
                     else:
-                        inputs[key] = value.detach().clone().to(self.device) if isinstance(value, torch.Tensor) else torch.tensor(value, device=self.device)
+                        # Input data
+                        if isinstance(value, torch.Tensor):
+                            inputs[key] = value.to(self.device)
+                        else:
+                            # For non-tensor inputs, just pass them as-is
+                            inputs[key] = value
                 
                 # Forward pass
                 outputs = model(inputs)
@@ -185,10 +283,12 @@ class MultitaskTrainer:
                 self._compute_additional_metrics(task_name, outputs, targets, task_metrics)
             
             # Log validation results
-            logger.info(f"Validation after epoch {epoch}:")
+            logger.info(f"Validation after epoch {epoch+1}:")
             for task_name, metrics in task_metrics.items():
                 metrics_str = ", ".join(f"{k}: {v:.4f}" for k, v in metrics.items())
                 logger.info(f"  {task_name}: {metrics_str}")
+                
+            return task_metrics
     
     def _compute_additional_metrics(self, task_name, outputs, targets, metrics_dict):
         """Compute additional metrics for validation."""
@@ -200,27 +300,22 @@ class MultitaskTrainer:
             task_metrics = model.compute_metrics(outputs, targets)
             metrics_dict[task_name].update(task_metrics)
     
-    def _save_models(self, epoch):
-        """Save models after an epoch."""
-        path_prefix = f"epoch_{epoch}"
-        self.save_models(path_prefix)
-        
     def save_models(self, path_prefix=None):
         """Save all models.
     
         Args:
             path_prefix: Optional path prefix for model files
+            
+        Returns:
+            bool: True if all models were saved successfully
         """
         try:
-            import os
-        
             # Get model directory from config or use default
             model_dir = self.config.get('paths', 'model_dir', fallback='models')
             os.makedirs(model_dir, exist_ok=True)
         
             # Use provided prefix or create a timestamp-based one
             if path_prefix is None:
-                from datetime import datetime
                 path_prefix = f"model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
             # Save each model
@@ -256,7 +351,6 @@ class MultitaskTrainer:
             bool: True if all models were loaded successfully
         """
         try:
-            import os
             import glob
         
             if device is None:

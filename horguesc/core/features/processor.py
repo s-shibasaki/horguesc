@@ -48,26 +48,23 @@ class FeatureProcessor:
             flat_values = values.flatten() if values.ndim > 1 else values
                 
             if feature_name in self.config.categorical_features:
-                # None値を除外して追加
-                valid_values = [v for v in flat_values if v is not None]
-                
                 # この特徴量が属するグループを取得
                 group_name = self.feature_groups['categorical'][feature_name]
-                self.group_observed_values[group_name].update(valid_values)
+                self.group_observed_values[group_name].update(flat_values)
                 
             # 数値特徴量の値も収集
             elif feature_name in self.config.numerical_features:
-                # 有効な値（Noneや欠損値でない）のみ取得
-                valid_values = [v for v in flat_values if v is not None and not (isinstance(v, float) and np.isnan(v)) and not pd.isna(v)]
-                
                 # この特徴量が属するグループを取得
                 group_name = self.feature_groups['numerical'][feature_name]
+                
+                # NaNではない値だけを収集
+                valid_values = flat_values[~np.isnan(flat_values)]
                 self.group_numerical_values[group_name].extend(valid_values)
                 
                 # ログに記録
                 invalid_count = len(flat_values) - len(valid_values)
                 if invalid_count > 0:
-                    logger.debug(f"特徴量 {feature_name} に {invalid_count} 個の無効な値（None/NaN）が含まれています")
+                    logger.debug(f"特徴量 {feature_name} に {invalid_count} 個のNaN値が含まれています")
 
     def fit(self, clear_after_fit=True):
         """カテゴリカル特徴量のエンコーダと数値特徴量の正規化パラメータをフィットします。
@@ -205,20 +202,9 @@ class FeatureProcessor:
             # 値を配列に変換
             values_array = np.array(values, dtype=np.float32)
             
-            # NaN値を除外してから統計量を計算
-            valid_values = values_array[~np.isnan(values_array)]
-            
-            if len(valid_values) == 0:
-                logger.warning(f"グループ {group_name} に有効な非NaN値がありません。デフォルトパラメータを使用します。")
-                self.numerical_parameters[group_name] = {
-                    'mean_value': 0.0,
-                    'std_value': 1.0
-                }
-                continue
-            
             # 標準化パラメータを計算
-            mean_value = float(np.mean(valid_values))
-            std_value = float(np.std(valid_values)) or 1.0  # 標準偏差が0の場合は1.0を使う
+            mean_value = float(np.mean(values_array))
+            std_value = float(np.std(values_array)) or 1.0  # 標準偏差が0の場合は1.0を使う
             
             self.numerical_parameters[group_name] = {
                 'mean_value': mean_value,
@@ -226,7 +212,7 @@ class FeatureProcessor:
             }
             
             logger.info(f"グループ {group_name} の正規化パラメータを計算しました: "
-                    f"{self.numerical_parameters[group_name]} (有効値数: {len(valid_values)}/{len(values_array)})")
+                    f"{self.numerical_parameters[group_name]} (有効値数: {len(values_array)}/{len(values_array)})")
     
     def _clear_collected_values(self):
         """フィット後に収集された値をクリアしてメモリを節約します。（内部メソッド）"""

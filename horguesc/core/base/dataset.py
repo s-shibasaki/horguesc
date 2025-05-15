@@ -230,21 +230,50 @@ class BaseDataset(abc.ABC):
         """データを取得し、self.raw_dataに格納します。
         
         実装時の必須ルール:
-        1. モデル入力特徴量は、horguesc.ini で定義した特徴量名と完全に一致させる
-        2. ターゲットカラムは基本的に 'target' という名前で格納する
-           (複数ターゲットがある場合など例外的にのみ他の名前を使用可)
-        3. self.raw_data に辞書形式でデータを格納する
-        4. 各特徴量のデータは NumPy 配列 (np.ndarray) として格納する
-           (データ処理パイプラインが NumPy 配列を想定して設計されているため)
+        1. 名前と形状の一致要件:
+           - モデル入力特徴量は、horguesc.ini で定義した特徴量名と完全に一致させる
+           - horguesc.ini の [features] セクションに定義されていない特徴量はエンコード対象外となる
+           - エンコードされる特徴量（numerical_features と categorical_features に含まれるもの）は
+             すべて同じ形状である必要がある（FeatureEncoder がバッチ処理を行うため）
+        
+        2. ターゲットの扱い:
+           - ターゲットカラムは 'target' という名前、または 'target_' で始まる名前で格納する
+             (例: 'target', 'target_win', 'target_place' など)
+           - 'target' や 'target_' で始まるカラムは自動的に処理され、MultitaskTrainer によって使用される
+        
+        3. 補助データの扱い:
+           - 特徴量（numerical_features/categorical_features）やターゲット（target/target_*）以外の
+             情報も必要に応じて self.raw_data に含めることができる
+           - これらの補助データはモデルトレーニングには直接使用されないが、後処理や分析に利用可能
+           - 例: race_id, timestamp, metadata などの補足情報
+           - 補助データはNumPy配列である必要はなく、リストや辞書など任意の形式で保持可能
+        
+        4. データ形式:
+           - self.raw_data に辞書形式でデータを格納する
+           - モデルの入力となる特徴量とターゲットのデータは NumPy 配列 (np.ndarray) として格納する
            - 1次元配列だけでなく、多次元配列 (2D, 3D等) も必要に応じて使用可能
+        
+        5. 欠損値の取り扱い:
+           - 数値特徴量: None や非数値データは欠損値として処理され、np.nan に変換される
+           - カテゴリカル特徴量: None は欠損値として特別に処理される
     
         データ構造の例:
+        # 例1: すべての特徴量が1次元配列の場合
         self.raw_data = {
-            'feature_name_1': np.array([...]),               # 1次元数値特徴量
-            'feature_name_2': np.array([...]),               # カテゴリカル特徴量
-            'feature_name_3': np.array([[...], [...]]),      # 2次元数値特徴量
-            'feature_name_4': np.array([[[...], [...]]]),    # 3次元数値特徴量 
-            'target': np.array([...])                        # ターゲット変数
+            'feature_a': np.array([1, 2, 3, ...]),           # 数値特徴量 (1次元)
+            'feature_b': np.array([5, 8, 2, ...]),           # 数値特徴量 (1次元)
+            'feature_c': np.array(['A', 'B', 'A', ...]),     # カテゴリカル特徴量 (1次元)
+            'target': np.array([0, 1, 1, ...]),              # 基本的なターゲット変数
+            'target_place': np.array([1, 3, 2, ...]),        # 追加のターゲット変数
+            'race_id': ['race_123', 'race_123', 'race_123', ...]  # 補助データ (リスト形式も可)
+        }
+        
+        # 例2: すべての特徴量が2次元配列の場合
+        self.raw_data = {
+            'feature_x': np.array([[1, 2], [3, 4], ...]),    # 数値特徴量 (2次元)
+            'feature_y': np.array([[5, 6], [7, 8], ...]),    # 数値特徴量 (2次元)
+            'target': np.array([0, 1, 1, ...]),              # ターゲット変数
+            'metadata': {...}                                # その他の補助情報
         }
         
         Args:

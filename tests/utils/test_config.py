@@ -1,138 +1,118 @@
-import pytest
 import os
+import sys
 import tempfile
+import pytest
 from unittest.mock import patch, MagicMock
-from horguesc.utils.config import Config, load_config
 
-@pytest.fixture
-def sample_config_content():
-    """Return sample configuration content for testing."""
-    return """
-[database]
-Host=testhost
-Port=5432
-Database=testdb
-Username=testuser
-Password=testpass
+# テスト対象のモジュールをインポート
+from horguesc.utils.config import Config, load_config, find_config
 
+class TestConfig:
+    @pytest.fixture
+    def sample_config_file(self):
+        """テスト用の設定ファイルを作成するフィクスチャ"""
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.ini') as f:
+            f.write("""
 [features]
-numerical_features=bataiju,futan_juryo,kyori
-categorical_features=umaban,track_code,course_kubun
+numerical_features = feature1, feature2, feature3
+categorical_features = cat1, cat2
 
 [groups]
-group1=bataiju,futan_juryo
-group2=umaban,track_code
+group1 = feature1, feature2
+group2 = cat1, cat2
 
 [training]
-train_start_date=2023-01-01
-train_end_date=2023-12-31
-val_start_date=2024-01-01
-val_end_date=2024-12-31
-"""
-
-@pytest.fixture
-def config_file(sample_config_content):
-    """Create a temporary config file for testing."""
-    with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.ini') as f:
-        f.write(sample_config_content)
-        path = f.name
-    
-    yield path
-    
-    # Clean up temp file after test
-    os.unlink(path)
-
-def test_config_load_from_file(config_file):
-    """Test loading configuration from a file."""
-    config = Config()
-    config.load_from_file(config_file)
-    
-    # Check if sections were loaded
-    assert 'database' in config
-    assert 'features' in config
-    assert 'groups' in config
-    assert 'training' in config
-    
-    # Check specific values
-    assert config['database']['Host'] == 'testhost'
-    assert config['features']['numerical_features'] == 'bataiju,futan_juryo,kyori'
-
-def test_config_parse_features(config_file):
-    """Test parsing feature definitions from configuration."""
-    config = Config()
-    config.load_from_file(config_file)
-    config.parse_features()
-    
-    # Check numerical and categorical features lists
-    assert config.numerical_features == ['bataiju', 'futan_juryo', 'kyori']
-    assert config.categorical_features == ['umaban', 'track_code', 'course_kubun']
-    
-    # Check feature groups
-    assert config.feature_groups['numerical']['bataiju'] == 'group1'
-    assert config.feature_groups['numerical']['futan_juryo'] == 'group1'
-    assert config.feature_groups['numerical']['kyori'] == 'kyori'  # Self-mapping for ungrouped features
-    
-    assert config.feature_groups['categorical']['umaban'] == 'group2'
-    assert config.feature_groups['categorical']['track_code'] == 'group2'
-    assert config.feature_groups['categorical']['course_kubun'] == 'course_kubun'  # Self-mapping
-
-def test_config_validate_dates(config_file):
-    """Test date validation in configuration."""
-    config = Config()
-    config.load_from_file(config_file)
-    
-    # This should validate without errors
-    config.validate()
-    
-    # Modify a date to be invalid
-    config['training']['train_start_date'] = 'invalid-date'
-    
-    # Validation should now fail
-    with pytest.raises(ValueError):
-        config.validate()
-
-def test_update_from_args(config_file):
-    """Test updating configuration from command line arguments."""
-    config = Config()
-    config.load_from_file(config_file)
-    
-    # Create a mock args object
-    args = MagicMock()
-    args.train_start = '2023-02-01'
-    # Add these missing attributes that the update_from_args method is trying to access
-    args.train_end = None
-    args.val_start = None
-    args.val_end = None
-    args.save_each_epoch = True
-    args.skip_validation = True
-    
-    # Update configuration with mock args
-    config.update_from_args(args)
-    
-    # Check if values were updated
-    assert config['training']['train_start_date'] == '2023-02-01'
-    assert config.getboolean('training', 'save_each_epoch') is True
-    assert config.getboolean('training', 'skip_validation') is True
-
-def test_load_config_function():
-    """Test the load_config helper function."""
-    with patch('horguesc.utils.config.Config') as MockConfig:
-        # Create a mock config instance
-        mock_config = MagicMock()
-        MockConfig.return_value = mock_config
+train_start_date = 2023-01-01
+train_end_date = 2023-03-31
+val_start_date = 2023-04-01
+val_end_date = 2023-04-30
+            """)
+            temp_path = f.name
         
-        # Setup the mock's method chain
-        mock_config.load_from_file.return_value = mock_config
-        mock_config.parse_features.return_value = mock_config
-        mock_config.validate.return_value = mock_config
+        yield temp_path
         
-        # Call the function
-        result = load_config()
+        # テスト後にファイルを削除
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+            
+    def test_config_load_from_file(self, sample_config_file):
+        """設定ファイルからの読み込みをテスト"""
+        config = Config()
+        config.load_from_file(sample_config_file)
         
-        # Verify the expected methods were called
-        mock_config.load_from_file.assert_called_once()
-        mock_config.parse_features.assert_called_once()
-        mock_config.validate.assert_called_once()
+        assert config.has_section('features')
+        assert config.has_option('features', 'numerical_features')
+        assert 'feature1, feature2, feature3' == config.get('features', 'numerical_features')
+    
+    def test_parse_features(self, sample_config_file):
+        """feature解析のテスト"""
+        config = Config().load_from_file(sample_config_file).parse_features()
         
-        # The function should return the config object
-        assert result == mock_config
+        # 数値特徴量のテスト
+        assert config.numerical_features == ['feature1', 'feature2', 'feature3']
+        assert config.categorical_features == ['cat1', 'cat2']
+        
+        # グループのテスト
+        assert config.feature_groups['numerical']['feature1'] == 'group1'
+        assert config.feature_groups['numerical']['feature2'] == 'group1'
+        assert config.feature_groups['numerical']['feature3'] == 'feature3'  # 自分自身がグループ
+        
+        # グループごとの特徴量リスト
+        assert set(config.group_features['numerical']['group1']) == {'feature1', 'feature2'}
+    
+    def test_validate_dates_valid(self, sample_config_file):
+        """有効な日付フォーマットの検証テスト"""
+        config = Config().load_from_file(sample_config_file)
+        # 例外が発生しないことを確認
+        config._validate_dates()
+    
+    def test_validate_dates_invalid(self):
+        """無効な日付フォーマットの検証テスト"""
+        config = Config()
+        config.add_section('training')
+        config.set('training', 'train_start_date', '2023/01/01')  # 不正なフォーマット
+        
+        with pytest.raises(ValueError) as excinfo:
+            config._validate_dates()
+        
+        assert "日付の形式が正しくありません" in str(excinfo.value)
+    
+    @patch('horguesc.utils.config.find_config')
+    def test_config_file_not_found(self, mock_find_config):
+        """設定ファイルが見つからない場合のテスト"""
+        mock_find_config.return_value = None
+        
+        with pytest.raises(FileNotFoundError):
+            Config().load_from_file()
+    
+    def test_update_from_args(self, sample_config_file):
+        """コマンドライン引数による設定更新のテスト"""
+        import argparse
+        config = Config().load_from_file(sample_config_file)
+        
+        # argparseのNamespaceオブジェクトを直接作成
+        args = argparse.Namespace()
+        args.command = 'train'
+        args.model_type = 'lightgbm'
+        args.training_batch_size = '64'
+        
+        # 辞書形式で変換して__dict__を設定
+        args.__dict__ = {
+            'command': 'train',
+            'model.type': 'lightgbm',
+            'training.batch_size': '64'
+        }
+        
+        config.update_from_args(args)
+        
+        assert config.get('model', 'type') == 'lightgbm'
+        assert config.get('training', 'batch_size') == '64'
+
+    def test_load_config_integration(self, sample_config_file):
+        """load_config関数の統合テスト"""
+        with patch('horguesc.utils.config.find_config', return_value=sample_config_file):
+            config = load_config()
+            
+        assert isinstance(config, Config)
+        assert len(config.numerical_features) == 3
+        assert len(config.categorical_features) == 2

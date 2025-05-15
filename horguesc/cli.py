@@ -23,23 +23,22 @@ def main():
     
     # Train command parser with all options
     train_parser = subparsers.add_parser('train', help='train a model')
-    train_parser.add_argument('--save-each-epoch', action='store_true', 
-                             help='Save model after each training epoch')
-    train_parser.add_argument('--skip-validation', action='store_true',
-                             help='Skip validation during training')
+    # Add train-specific arguments
+    _add_common_arguments(train_parser)
+    train_parser.add_argument('--training.train_start_date', help='Training data start date (YYYY-MM-DD)')
+    train_parser.add_argument('--training.train_end_date', help='Training data end date (YYYY-MM-DD)')
+    train_parser.add_argument('--training.val_start_date', help='Validation data start date (YYYY-MM-DD)')
+    train_parser.add_argument('--training.val_end_date', help='Validation data end date (YYYY-MM-DD)')
+    train_parser.add_argument('--training.save_each_epoch', help='Save model after each epoch (true/false)')
+    train_parser.add_argument('--training.skip_validation', help='Skip validation (true/false)')
     
-    # 学習期間を設定するオプションを追加
-    train_parser.add_argument('--train-start', type=str, 
-                             help='Training data start date (YYYY-MM-DD)')
-    train_parser.add_argument('--train-end', type=str,
-                             help='Training data end date (YYYY-MM-DD)')
-    train_parser.add_argument('--val-start', type=str,
-                             help='Validation data start date (YYYY-MM-DD)')
-    train_parser.add_argument('--val-end', type=str,
-                             help='Validation data end date (YYYY-MM-DD)')
-    
+    # Test command parser
     test_parser = subparsers.add_parser('test', help='test a trained model')
+    _add_common_arguments(test_parser)
+    
+    # Predict command parser
     predict_parser = subparsers.add_parser('predict', help='make predictions with a trained model')
+    _add_common_arguments(predict_parser)
     
     args = parser.parse_args()
 
@@ -82,5 +81,13 @@ def main():
 
     return 0
 
-if __name__ == "__main__":
-    main()
+def _add_common_arguments(parser):
+    """Add common command line arguments to a parser."""
+    # Common configuration arguments
+    parser.add_argument('--database.host', help='Database host')
+    parser.add_argument('--database.port', type=int, help='Database port')
+    parser.add_argument('--database.username', help='Database username')
+    parser.add_argument('--database.password', help='Database password')
+    
+    # モデルディレクトリのコマンドライン引数を追加
+    parser.add_argument('--paths.model_dir', help='Directory to save/load models')

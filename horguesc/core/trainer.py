@@ -311,7 +311,7 @@ class MultitaskTrainer:
         """
         try:
             # Get model directory from config or use default
-            model_dir = self.config.get('paths', 'model_dir', fallback='models')
+            model_dir = self.config.get('paths', 'model_dir', fallback='models/default')
             os.makedirs(model_dir, exist_ok=True)
         
             # Use provided prefix or create a timestamp-based one
@@ -325,7 +325,6 @@ class MultitaskTrainer:
                 # Save model state and metadata
                 model_data = {
                     'state_dict': model.state_dict(),
-                    'model_name': model.get_name(),
                     'task': task_name,
                     'config': {k: dict(self.config[k]) for k in self.config.sections()} 
                           if hasattr(self.config, 'sections') else {},
@@ -357,7 +356,7 @@ class MultitaskTrainer:
                 device = self.device
         
             # Get model directory from config
-            model_dir = self.config.get('paths', 'model_dir', fallback='models')
+            model_dir = self.config.get('paths', 'model_dir', fallback='models/default')
         
             # Find all model files with this prefix
             model_pattern = os.path.join(model_dir, f"{path_prefix}_*.pt")

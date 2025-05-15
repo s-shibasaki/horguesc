@@ -115,7 +115,6 @@ def test_init(mock_config):
     assert dataset.batch_size == 32
     assert dataset.start_date == datetime.datetime(2023, 1, 1)
     assert dataset.end_date == datetime.datetime(2023, 1, 31)
-    assert dataset.get_name() == "Trifecta"
 
 
 def test_fetch_data(mock_config, mock_db_ops):

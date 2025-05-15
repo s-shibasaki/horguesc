@@ -122,7 +122,7 @@ def run(config):
                 logger.info(f"{task} 検証データセットの特徴量処理を完了しました")
         
         # エンコーダを保存（後で検証/推論に使用）
-        encoder_path = os.path.join(config.get('paths', 'model_dir', fallback='models'), 'feature_processor.pt')
+        encoder_path = os.path.join(config.get('paths', 'model_dir', fallback='models/default'), 'feature_processor.pt')
         os.makedirs(os.path.dirname(encoder_path), exist_ok=True)
         feature_processor.save_state(encoder_path)
         logger.info(f"特徴量処理器の状態を {encoder_path} に保存しました")

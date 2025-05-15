@@ -59,10 +59,6 @@ class TrifectaModel(BaseModel):
             nn.Linear(self.hidden_dim, 1)  # 各組み合わせの確率を出力
         )
     
-    def get_name(self):
-        """モデルの名前を取得"""
-        return "TrifectaModel"
-    
     def forward(self, inputs):
         """
         順伝播処理

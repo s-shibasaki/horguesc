@@ -54,10 +54,6 @@ class TrifectaDataset(BaseDataset):
         """TrifectaDatasetの初期化"""
         super().__init__(*args, **kwargs)
     
-    def get_name(self) -> str:
-        """データセット名を返す"""
-        return "Trifecta"
-        
     def _fetch_data(self, db_ops=None, **kwargs) -> None:
         """データベースからTrifectaデータを取得する"""
         logger.info(f"Trifectaデータの取得を開始: {self.start_date} から {self.end_date} まで")
@@ -245,4 +241,4 @@ class TrifectaDataset(BaseDataset):
         self.raw_data['permutations'] = all_permutations
         
         logger.info(f"3連単ターゲットの作成完了: {len(all_permutations)}通りの順列、{num_races}レース")
-    
+

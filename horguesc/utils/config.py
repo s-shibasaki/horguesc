@@ -129,7 +129,7 @@ class Config(configparser.ConfigParser):
     
     def update_from_args(self, args):
         """
-        Update configuration based on command line arguments.
+        Update configuration from command line arguments.
         
         Args:
             args: Parsed command line arguments
@@ -137,33 +137,31 @@ class Config(configparser.ConfigParser):
         Returns:
             self: For method chaining
         """
-        # 設定をコマンドライン引数で更新
-        if hasattr(args, 'save_each_epoch'):
-            self.set('training', 'save_each_epoch', str(args.save_each_epoch).lower())
-            logger.info(f"save_each_epoch設定を上書き: {args.save_each_epoch}")
+        # Convert args Namespace to dictionary, skipping None values and command
+        if args:
+            args_dict = {k: v for k, v in vars(args).items() 
+                        if v is not None and k != 'command' and k != 'version'}
             
-        # スキップ検証オプションの処理
-        if hasattr(args, 'skip_validation'):
-            self.set('training', 'skip_validation', str(args.skip_validation).lower())
-            logger.info(f"skip_validation設定を上書き: {args.skip_validation}")
+            # Process each argument
+            for key, value in args_dict.items():
+                # Arguments are expected in format: section.option=value or section.subsection.option=value
+                parts = key.split('.')
+                if len(parts) >= 2:
+                    # Last part is the option
+                    option = parts[-1]
+                    # Join all previous parts as section name
+                    section = '.'.join(parts[:-1])
+                    
+                    # Create section if it doesn't exist
+                    if not self.has_section(section):
+                        self.add_section(section)
+                    
+                    # Update configuration value
+                    self.set(section, option, str(value))
+                    logger.info(f"Config updated from command line: [{section}] {option} = {value}")
+                else:
+                    logger.debug(f"Skipping command line argument '{key}' - not in section.option format")
         
-        # 学習期間の設定を上書き
-        if hasattr(args, 'train_start') and args.train_start:
-            self.set('training', 'train_start_date', args.train_start)
-            logger.info(f"train_start_date設定を上書き: {args.train_start}")
-            
-        if hasattr(args, 'train_end') and args.train_end:
-            self.set('training', 'train_end_date', args.train_end)
-            logger.info(f"train_end_date設定を上書き: {args.train_end}")
-            
-        if hasattr(args, 'val_start') and args.val_start:
-            self.set('training', 'val_start_date', args.val_start)
-            logger.info(f"val_start_date設定を上書き: {args.val_start}")
-            
-        if hasattr(args, 'val_end') and args.val_end:
-            self.set('training', 'val_end_date', args.val_end)
-            logger.info(f"val_end_date設定を上書き: {args.val_end}")
-            
         return self
     
     def validate(self):

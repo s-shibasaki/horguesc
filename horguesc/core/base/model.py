@@ -46,12 +46,3 @@ class BaseModel(nn.Module, abc.ABC):
             dict: Dictionary containing metric names and values
         """
         pass
-    
-    @abc.abstractmethod
-    def get_name(self):
-        """Get the name of the model.
-        
-        Returns:
-            str: Model name
-        """
-        pass

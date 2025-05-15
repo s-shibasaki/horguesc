@@ -11,22 +11,16 @@ class BaseDataset(abc.ABC):
     """全てのタスク固有データセットが継承する基底データセットクラス。
     
     このクラスはデータの取得から前処理、バッチ処理までのパイプラインを提供します。
-    サブクラスでは主に _fetch_data メソッドと get_name メソッドを実装する必要があります。
+    サブクラスでは主に _fetch_data メソッドを実装する必要があります。
     
     特徴:
     - ターゲット変数: 'target' または 'target_' で始まる名前のデータは自動的にバッチに含まれます
-    - 補助データ: AUXILIARY_KEYS クラス変数に指定したキーのデータはバッチに含まれます
+    - 補助データ: 特徴量やターゲット以外のデータも自動的にバッチに含まれます
     - データ型処理: テンソル/NumPy配列はインデックスでスライス、リストは要素抽出、その他はコピー
     
     使用例:
     ```python
     class MyDataset(BaseDataset):
-        # バッチに含めたい補助データのキーを定義
-        AUXILIARY_KEYS = ['race_id', 'horse_names']
-        
-        def get_name(self):
-            return "MyDataset"
-            
         def _fetch_data(self, *args, **kwargs):
             # データ取得処理...
             self.raw_data = {
@@ -38,7 +32,7 @@ class BaseDataset(abc.ABC):
                 'target': np.array(...),
                 'target_auxiliary': np.array(...),
                 
-                # 補助データ (AUXILIARY_KEYSに指定すればバッチに含まれる)
+                # 補助データ (自動的にバッチに含まれる)
                 'race_id': [...],  # リストでもOK
                 'horse_names': [...],
             }
@@ -97,7 +91,7 @@ class BaseDataset(abc.ABC):
         self.kwargs = kwargs
         
         # 初期化時の情報をログに記録
-        logger.info(f"{self.get_name()} データセット - モード: {self.mode}")
+        logger.info(f"{self.__class__.__name__} データセット - モード: {self.mode}")
     
     # 公開API - データアクセスと処理のフロー
     
@@ -112,7 +106,7 @@ class BaseDataset(abc.ABC):
             self._fetch_data(*args, **kwargs)
             
             if self.raw_data is None:
-                logger.warning(f"{self.get_name()} データ取得結果が空でした")
+                logger.warning(f"{self.__class__.__name__} データ取得結果が空でした")
                 self.raw_data = {}
             else:
                 # データ取得後に数値特徴量を float32 型に変換
@@ -126,10 +120,10 @@ class BaseDataset(abc.ABC):
             raise ValueError(f"{self.get_name()} データが取得されていません。先に fetch_data() を呼び出してください")
         
         if not self._data_collected:
-            logger.info(f"{self.get_name()} データセットから特徴量の値を収集中...")
+            logger.info(f"{self.__class__.__name__} データセットから特徴量の値を収集中...")
             feature_processor.collect_values_for_fitting(self.raw_data)
             self._data_collected = True
-            logger.info(f"{self.get_name()} データセットからの特徴量値収集が完了しました")
+            logger.info(f"{self.__class__.__name__} データセットからの特徴量値収集が完了しました")
         
         return self
     
@@ -139,11 +133,11 @@ class BaseDataset(abc.ABC):
             raise ValueError(f"{self.get_name()} データが取得されていません。先に fetch_data() を呼び出してください")
         
         if not self._data_processed:
-            logger.info(f"{self.get_name()} データセットの特徴量を処理中...")
+            logger.info(f"{self.__class__.__name__} データセットの特徴量を処理中...")
             self.processed_data = self._process_features(self.raw_data, feature_processor)
             self._data_processed = True
             self._init_batch_indices()  # バッチインデックスの初期化を追加
-            logger.info(f"{self.get_name()} データセットの特徴量処理が完了しました")
+            logger.info(f"{self.__class__.__name__} データセットの特徴量処理が完了しました")
         
         return self
     
@@ -171,7 +165,7 @@ class BaseDataset(abc.ABC):
         if self._next_batch_index >= total_batches:
             # 最後のバッチだった場合、次回のためにインデックスを初期化
             if self.mode == self.MODE_TRAIN:
-                logger.debug(f"{self.get_name()} データセット: 最後のバッチに到達したため再シャッフルします")
+                logger.debug(f"{self.__class__.__name__} データセット: 最後のバッチに到達したため再シャッフルします")
             self._init_batch_indices()  # インデックス初期化（シャッフルも含む）
         
         return batch_data
@@ -380,11 +374,6 @@ class BaseDataset(abc.ABC):
         # サブクラスで実装
         pass
     
-    @abc.abstractmethod
-    def get_name(self) -> str:
-        """データセットの名前を取得します。"""
-        pass
-
     def _convert_numerical_features_to_float(self) -> None:
         """数値特徴量を float32 型に変換します。None や非数値は np.nan に変換します."""
         if not hasattr(self.config, 'numerical_features') or not self.raw_data:

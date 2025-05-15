@@ -1,13 +1,49 @@
 import abc
 import logging
 import numpy as np
+import torch
 from datetime import datetime
 from typing import Dict, List, Optional, Union, Any
 
 logger = logging.getLogger(__name__)
 
 class BaseDataset(abc.ABC):
-    """全てのタスク固有データセットが継承する基底データセットクラス。"""
+    """全てのタスク固有データセットが継承する基底データセットクラス。
+    
+    このクラスはデータの取得から前処理、バッチ処理までのパイプラインを提供します。
+    サブクラスでは主に _fetch_data メソッドと get_name メソッドを実装する必要があります。
+    
+    特徴:
+    - ターゲット変数: 'target' または 'target_' で始まる名前のデータは自動的にバッチに含まれます
+    - 補助データ: AUXILIARY_KEYS クラス変数に指定したキーのデータはバッチに含まれます
+    - データ型処理: テンソル/NumPy配列はインデックスでスライス、リストは要素抽出、その他はコピー
+    
+    使用例:
+    ```python
+    class MyDataset(BaseDataset):
+        # バッチに含めたい補助データのキーを定義
+        AUXILIARY_KEYS = ['race_id', 'horse_names']
+        
+        def get_name(self):
+            return "MyDataset"
+            
+        def _fetch_data(self, *args, **kwargs):
+            # データ取得処理...
+            self.raw_data = {
+                # 特徴量 (必ずnumpy配列で、ini定義と名前が一致すること)
+                'numerical_feature': np.array(...),
+                'categorical_feature': np.array(...),
+                
+                # ターゲット (自動的にバッチに含まれる)
+                'target': np.array(...),
+                'target_auxiliary': np.array(...),
+                
+                # 補助データ (AUXILIARY_KEYSに指定すればバッチに含まれる)
+                'race_id': [...],  # リストでもOK
+                'horse_names': [...],
+            }
+    ```
+    """
     
     # データセットのモード定義
     MODE_TRAIN = 'train'  # 訓練用（シャッフル有り）
@@ -153,12 +189,31 @@ class BaseDataset(abc.ABC):
         return datetime.strptime(date_value, '%Y-%m-%d')
     
     def _process_features(self, raw_data: Dict[str, Any], feature_processor: Any) -> Dict[str, np.ndarray]:
-        """特徴量を処理します。サブクラスでカスタム処理が必要な場合はオーバーライドします。"""
+        """特徴量を処理します。サブクラスでカスタム処理が必要な場合はオーバーライドします。
+        
+        このメソッドでは以下が自動的に処理されます:
+        1. 設定ファイルで定義された数値特徴量とカテゴリカル特徴量のエンコード
+        2. ターゲット変数の自動転送 (target または target_ で始まるキー)
+        3. 補助データの自動転送 (AUXILIARY_KEYS に指定されたキー)
+        
+        オーバーライド時のヒント:
+        - 特別な処理が必要な場合は、super()._process_features()の結果に追加処理を行うことを推奨
+        
+        Args:
+            raw_data: 生データの辞書
+            feature_processor: 特徴量処理オブジェクト
+            
+        Returns:
+            処理済みデータの辞書
+        """
         processed = {}
         
         # 設定から特徴量情報を取得
         numerical_features = self.config.numerical_features
         categorical_features = self.config.categorical_features
+        
+        # 処理済みキーのトラッキング
+        processed_keys = set()
         
         # 数値特徴量の処理
         for feature_name in numerical_features:
@@ -166,18 +221,40 @@ class BaseDataset(abc.ABC):
                 processed[feature_name] = feature_processor.normalize_numerical_feature(
                     feature_name, raw_data[feature_name]
                 )
-        
+                processed_keys.add(feature_name)
+    
         # カテゴリカル特徴量の処理
         for feature_name in categorical_features:
             if feature_name in raw_data:
                 processed[feature_name] = feature_processor.encode_categorical_feature(
                     feature_name, raw_data[feature_name]
                 )
-        
-        # 処理された特徴量の数をログに記録
+                processed_keys.add(feature_name)
+                
+        # ターゲット変数をそのままコピー (target または target_で始まるキー)
+        for key, value in raw_data.items():
+            if key == 'target' or key.startswith('target_'):
+                if isinstance(value, np.ndarray):
+                    processed[key] = torch.tensor(value)
+                else:
+                    # NumPy配列でない場合はそのまま保存
+                    processed[key] = value
+                processed_keys.add(key)
+            
+        # 自動的に処理されていない残りのデータを含める
+        # AUXILIARY_KEYS を明示的に定義する必要がなくなる
+        for key, value in raw_data.items():
+            if key not in processed_keys:
+                processed[key] = value
+            
+        # 処理結果をログに記録
         numerical_count = len([f for f in numerical_features if f in raw_data])
         categorical_count = len([f for f in categorical_features if f in raw_data])
-        logger.info(f"処理された特徴量: 数値 {numerical_count}個, カテゴリ {categorical_count}個")
+        targets_count = len([k for k in processed.keys() if k == 'target' or k.startswith('target_')])
+        auxiliary_count = len([k for k in processed.keys() if k not in processed_keys])
+        
+        logger.info(f"処理された特徴量: 数値 {numerical_count}個, カテゴリ {categorical_count}個, "
+                    f"ターゲット {targets_count}個, 補助データ {auxiliary_count}個")
         
         return processed
     
@@ -216,11 +293,31 @@ class BaseDataset(abc.ABC):
         indices = self._batch_indices[start_idx:end_idx]
         return self._get_items_at_indices(indices)
     
-    def _get_items_at_indices(self, indices: np.ndarray) -> Dict[str, np.ndarray]:
-        """指定されたインデックスのアイテムを取得します。サブクラスでオーバーライド可能。"""
+    def _get_items_at_indices(self, indices: np.ndarray) -> Dict[str, Any]:
+        """指定されたインデックスのアイテムを取得します。サブクラスでオーバーライド可能。
+        
+        このメソッドは、データタイプに応じて以下のように処理します:
+        1. Tensor/NumPy配列: インデックスでスライスされます (data[indices])
+        2. リスト: インデックスに対応する要素が抽出されます ([data[i] for i in indices])
+        3. その他のデータ型: そのままコピーされます
+        
+        Args:
+            indices: 取得するデータのインデックス配列
+            
+        Returns:
+            指定インデックスのデータを含む辞書
+        """
         batch = {}
         for feature_name, feature_data in self.processed_data.items():
-            batch[feature_name] = feature_data[indices]
+            if isinstance(feature_data, (torch.Tensor, np.ndarray)):
+                # テンソルやNumPy配列の場合はインデックスでスライス
+                batch[feature_name] = feature_data[indices]
+            elif isinstance(feature_data, list) and len(feature_data) > 0:
+                # リストの場合はインデックスでスライス
+                batch[feature_name] = [feature_data[i] for i in indices]
+            else:
+                # その他の場合はそのままコピー
+                batch[feature_name] = feature_data
         return batch
     
     # 抽象メソッド - サブクラスで必ず実装する必要あり

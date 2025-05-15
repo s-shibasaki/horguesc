@@ -1,6 +1,7 @@
 import logging
 import torch
 from collections import defaultdict
+import configparser
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +60,12 @@ class MultitaskTrainer:
         """
         total_loss = 0
         task_losses = defaultdict(float)
-        steps = 0
         
+        # Get steps_per_epoch with proper error handling
         try:
             steps = self.config.getint('training', 'steps_per_epoch')
-        except (ValueError, KeyError):
-            # Fallback to a default value
+        except (ValueError, KeyError, configparser.NoOptionError, configparser.NoSectionError):
+            # Better fallback logic
             steps = 100
             logger.warning(f"'steps_per_epoch' not properly configured, using default value: {steps}")
         

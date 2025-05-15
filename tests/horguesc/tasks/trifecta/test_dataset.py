@@ -140,17 +140,19 @@ def test_fetch_data(mock_config, mock_db_ops):
     
     # raw_dataが正しく構築されたかチェック
     assert 'kyoso_id' in dataset.raw_data
-    assert len(dataset.raw_data['kyoso_id']) == 2  # 2つのレース
+    assert len(dataset.raw_data['kyoso_id']) == 1  # モックデータでは3頭以上のレースは1つのみ
     
     # 特徴量データが正しく抽出されたか確認
     assert 'umaban' in dataset.raw_data
     assert 'bataiju' in dataset.raw_data
     assert 'ketto_toroku_bango' in dataset.raw_data
-    assert 'target' in dataset.raw_data
+    
+    # 'target'はFEATURE_DEFINITIONSに含まれていないので、代わりに'kakutei_chakujun'を確認
+    assert 'kakutei_chakujun' in dataset.raw_data
     
     # 2次元配列に変換されているか確認
-    assert dataset.raw_data['umaban'].shape == (2, 3)  # 2レース、最大3頭出走
-    assert dataset.raw_data['target'].shape == (2, 3)  # 2レース、最大3頭出走
+    assert dataset.raw_data['umaban'].shape == (1, 3)  # 1レース、最大3頭出走
+    assert dataset.raw_data['kakutei_chakujun'].shape == (1, 3)  # 1レース、最大3頭出走
 
 
 def test_convert_query_results_to_2d_arrays(mock_config):
@@ -160,7 +162,7 @@ def test_convert_query_results_to_2d_arrays(mock_config):
         mode='train'
     )
     
-    # テスト用のクエリ結果
+    # テスト用のクエリ結果 - 3頭のデータを用意して3連単予測の最小要件を満たす
     query_results = [
         {
             'kaisai_date': '2023-01-01',
@@ -171,7 +173,8 @@ def test_convert_query_results_to_2d_arrays(mock_config):
             'umaban': 1,
             'bataiju': 480,
             'ketto_toroku_bango': 123456789,
-            'target': 1
+            'target': 1,
+            'kakutei_chakujun': 1
         },
         {
             'kaisai_date': '2023-01-01',
@@ -182,7 +185,20 @@ def test_convert_query_results_to_2d_arrays(mock_config):
             'umaban': 2,
             'bataiju': 460,
             'ketto_toroku_bango': 987654321,
-            'target': 2
+            'target': 2,
+            'kakutei_chakujun': 2
+        },
+        {
+            'kaisai_date': '2023-01-01', 
+            'keibajo_code': '01',
+            'kaisai_kai': 1,
+            'kaisai_nichime': 1,
+            'kyoso_bango': 1,
+            'umaban': 3,
+            'bataiju': 470,
+            'ketto_toroku_bango': 555555555,
+            'target': 3,
+            'kakutei_chakujun': 3
         }
     ]
     
@@ -195,17 +211,21 @@ def test_convert_query_results_to_2d_arrays(mock_config):
     
     # 特徴量が正しく抽出されているか確認
     assert 'umaban' in result
-    assert result['umaban'].shape == (1, 2)  # 1レース、2頭出走
+    assert result['umaban'].shape == (1, 3)  # 1レース、3頭出走
     assert result['umaban'][0][0] == 1
     assert result['umaban'][0][1] == 2
+    assert result['umaban'][0][2] == 3
     
     assert 'bataiju' in result
     assert result['bataiju'][0][0] == 480
     assert result['bataiju'][0][1] == 460
+    assert result['bataiju'][0][2] == 470
     
-    assert 'target' in result
-    assert result['target'][0][0] == 1
-    assert result['target'][0][1] == 2
+    # 'target'はFEATURE_DEFINITIONSに含まれていないので、代わりに'kakutei_chakujun'を確認
+    assert 'kakutei_chakujun' in result
+    assert result['kakutei_chakujun'][0][0] == 1
+    assert result['kakutei_chakujun'][0][1] == 2
+    assert result['kakutei_chakujun'][0][2] == 3
 
 
 def test_get_all_data(mock_config):

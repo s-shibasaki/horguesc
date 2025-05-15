@@ -4,6 +4,8 @@ import numpy as np
 from datetime import datetime
 from collections import defaultdict
 from horguesc.database.sql_builder import SQLBuilder
+import itertools
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +25,20 @@ class TrifectaDataset(BaseDataset):
         'umaban': 'se.umaban',
         'bataiju': 'CASE WHEN se.bataiju BETWEEN 2 AND 998 THEN se.bataiju ELSE NULL END',
         'ketto_toroku_bango': 'CASE WHEN se.ketto_toroku_bango != 0 THEN se.ketto_toroku_bango ELSE NULL END',
+        'futan_juryo': 'se.futan_juryo',
+        'blinker_shiyo_kubun': 'se.blinker_shiyo_kubun',
+        'kishu_code': 'se.kishu_code',
+        'kishu_minarai_code': 'se.kishu_minarai_code',
+        
+        # RAテーブルの関連特徴量
+        'kyori': 'ra.kyori',
+        'track_code': 'ra.track_code',
+        'course_kubun': 'ra.course_kubun',
+        'tenko_code': 'ra.tenko_code',
+        'babajotai_code': 'ra.babajotai_code',
         
         # ターゲット変数
-        'target': 'se.kakutei_chakujun',
+        'kakutei_chakujun': 'se.kakutei_chakujun',
     }
     
     # 競走IDを構成するカラム定義（FEATURE_DEFINITIONSのキーを使用）
@@ -74,6 +87,8 @@ class TrifectaDataset(BaseDataset):
         
         # データフィルタ条件を追加
         builder.where("se.data_type IN ('7', '2')")
+        builder.where("se.kakutei_chakujun IS NOT NULL")  # 確定着順がある馬のみ
+        builder.where("se.kakutei_chakujun BETWEEN 1 AND 18")  # 着順が有効な範囲内のもの
         
         # 日付範囲のフィルタ
         if start_date_str or end_date_str:
@@ -99,6 +114,9 @@ class TrifectaDataset(BaseDataset):
             
             # クエリ結果を2D配列形式のデータに変換
             self.raw_data = self._convert_query_results_to_2d_arrays(results)
+            
+            # 3連単のターゲットを作成
+            self._create_trifecta_targets()
             
             logger.info(f"Trifectaデータの取得完了: {len(self.raw_data['kyoso_id'])}競走、{len(results)}頭")
             
@@ -138,6 +156,11 @@ class TrifectaDataset(BaseDataset):
         
         # 各競走のデータを処理
         for kyoso_id, horses in kyoso_groups.items():
+            # 最低3頭の出走馬がいるレースのみ処理（3連単予測のため）
+            if len(horses) < 3:
+                logger.debug(f"出走頭数が3頭未満のレースをスキップ: {kyoso_id}")
+                continue
+                
             kyoso_ids.append(kyoso_id)
             
             # 各特徴量について処理
@@ -160,3 +183,66 @@ class TrifectaDataset(BaseDataset):
             formatted_data[feature] = np.array(values_list)
         
         return formatted_data
+    
+    def _create_trifecta_targets(self):
+        """
+        3連単のターゲットを作成する
+        
+        - 各レースについて、馬番と確定着順の対応を作成
+        - 全ての可能な3連単順列を生成
+        - 実際の着順1-2-3を正解とするターゲットを作成
+        """
+        if 'kakutei_chakujun' not in self.raw_data or 'umaban' not in self.raw_data:
+            logger.error("確定着順またはumaban（馬番）データがありません")
+            return
+        
+        num_races = len(self.raw_data['kyoso_id'])
+        if num_races == 0:
+            logger.warning("レースデータがありません")
+            return
+        
+        max_horses = self.raw_data['umaban'].shape[1]
+        
+        # 全ての馬番での可能な3連単順列を生成
+        all_permutations = list(itertools.permutations(range(1, max_horses + 1), 3))
+        
+        # ターゲットインデックス配列を初期化
+        target_indices = np.zeros(num_races, dtype=np.int64)
+        
+        for race_idx in range(num_races):
+            umaban_array = self.raw_data['umaban'][race_idx]
+            chakujun_array = self.raw_data['kakutei_chakujun'][race_idx]
+            
+            # 有効な馬番と着順のペアを作成
+            valid_horses = [(int(umaban), int(chakujun)) 
+                           for umaban, chakujun in zip(umaban_array, chakujun_array) 
+                           if umaban is not None and chakujun is not None]
+            
+            # 着順でソート
+            valid_horses.sort(key=lambda x: x[1])
+            
+            # 上位3着の馬番を取得
+            top3_horses = [horse[0] for horse in valid_horses[:3]]
+            
+            # 3頭揃わない場合はスキップ
+            if len(top3_horses) < 3:
+                logger.debug(f"レース {self.raw_data['kyoso_id'][race_idx]} は3着までの馬が揃っていません")
+                continue
+            
+            # 正解の順列を作成
+            correct_perm = tuple(top3_horses)
+            
+            # 正解順列のインデックスを見つける
+            try:
+                correct_index = all_permutations.index(correct_perm)
+                target_indices[race_idx] = correct_index
+            except ValueError:
+                # 馬番がリスト範囲外の場合など
+                logger.warning(f"レース {self.raw_data['kyoso_id'][race_idx]} の正解順列 {correct_perm} が見つかりませんでした")
+        
+        # ターゲットデータを追加
+        self.raw_data['target_trifecta'] = target_indices
+        self.raw_data['permutations'] = all_permutations
+        
+        logger.info(f"3連単ターゲットの作成完了: {len(all_permutations)}通りの順列、{num_races}レース")
+    

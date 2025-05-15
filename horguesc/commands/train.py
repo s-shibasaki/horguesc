@@ -35,7 +35,6 @@ def run(args):
         models = {}
         train_datasets = {}
         val_datasets = {}
-        all_parameters = []
 
         # 設定からタスクを取得
         tasks_str = config.get('tasks', 'active', fallback='')
@@ -108,7 +107,6 @@ def run(args):
         # 特徴量プロセッサでフィットした後に共有エンコーダを作成
         group_cardinalities = feature_processor.get_group_cardinalities()
         shared_encoder = FeatureEncoder(config, group_cardinalities)
-        all_parameters.extend(shared_encoder.parameters())
         
         # Step 3: 各データセットのデータを処理
         for task in tasks:
@@ -134,13 +132,24 @@ def run(args):
                 
                 models[task] = model
                 
-                # オプティマイザ用のパラメータを収集
-                all_parameters.extend(model.parameters())
-                
                 logger.info(f"{task} モデルを初期化しました")
             except (ImportError, AttributeError) as e:
                 logger.error(f"タスク {task} のモデル初期化に失敗しました: {e}")
                 return 1
+        
+        # パラメータの重複を防ぐため、set()を使用して一意のパラメータを収集
+        # 代替手法: 単純に all_parameters = list(shared_encoder.parameters()) + [p for model in models.values() for p in model.parameters()]
+        param_set = set()
+        all_parameters = []
+        
+        # モデルとエンコーダーのパラメータを重複なく収集
+        for model in models.values():
+            for param in model.parameters():
+                # パラメータのメモリ位置でユニーク性を確認
+                param_id = id(param)
+                if param_id not in param_set:
+                    param_set.add(param_id)
+                    all_parameters.append(param)
         
         # オプティマイザを作成
         optimizer_name = config.get('training', 'optimizer', fallback='Adam')

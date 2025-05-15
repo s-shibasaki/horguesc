@@ -32,17 +32,24 @@ class FeatureProcessor:
     # 2. 公開API（ライフサイクル順）
     def collect_values_for_fitting(self, data_source):
         """データソースから特徴量の値を収集します
-    
+
         Args:
             data_source: numpy配列を含む辞書
-    
+
         Raises:
             TypeError: 特徴量の値がnumpy配列でない場合
         """
+        # Get the list of all valid feature names
+        all_feature_names = set(self.config.numerical_features + self.config.categorical_features)
+        
         for feature_name, values in data_source.items():
+            # Skip fields that are not in our defined features list
+            if feature_name not in all_feature_names:
+                continue
+                
             if not isinstance(values, np.ndarray):
                 raise TypeError(f"特徴量 {feature_name} はnumpy配列(np.ndarray)である必要があります。"
-                               f"提供された型: {type(values)}")
+                              f"提供された型: {type(values)}")
             
             # 多次元配列をフラット化する
             flat_values = values.flatten() if values.ndim > 1 else values
@@ -50,8 +57,15 @@ class FeatureProcessor:
             if feature_name in self.config.categorical_features:
                 # この特徴量が属するグループを取得
                 group_name = self.feature_groups['categorical'][feature_name]
-                self.group_observed_values[group_name].update(flat_values)
+                # None値を除外して追加
+                valid_values = [val for val in flat_values if val is not None]
+                self.group_observed_values[group_name].update(valid_values)
                 
+                # Noneの数をログに記録
+                none_count = len(flat_values) - len(valid_values)
+                if none_count > 0:
+                    logger.debug(f"特徴量 {feature_name} に {none_count} 個のNone値が含まれています")
+            
             # 数値特徴量の値も収集
             elif feature_name in self.config.numerical_features:
                 # この特徴量が属するグループを取得

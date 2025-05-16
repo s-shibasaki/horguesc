@@ -145,11 +145,11 @@ class BaseDataset(abc.ABC):
         """全てのデータを一度に取得します。"""
         return self._get_all_data()
     
-    def get_batch(self) -> Dict[str, np.ndarray]:
+    def get_batch(self) -> tuple[Dict[str, np.ndarray], bool]:
         """固定サイズのバッチを取得します。
         
         Returns:
-            バッチデータを含む辞書
+            tuple: (バッチデータを含む辞書, 最後のバッチかどうかを示すブール値)
             
         Note:
             最後のバッチに到達した後、訓練モードではデータが自動的にシャッフルされます。
@@ -162,13 +162,15 @@ class BaseDataset(abc.ABC):
         data_size = self._get_data_size()
         total_batches = (data_size + self.batch_size - 1) // self.batch_size  # 切り上げ除算
         
-        if self._next_batch_index >= total_batches:
+        is_last_batch = self._next_batch_index >= total_batches
+        
+        if is_last_batch:
             # 最後のバッチだった場合、次回のためにインデックスを初期化
             if self.mode == self.MODE_TRAIN:
                 logger.debug(f"{self.__class__.__name__} データセット: 最後のバッチに到達したため再シャッフルします")
             self._init_batch_indices()  # インデックス初期化（シャッフルも含む）
-        
-        return batch_data
+    
+        return batch_data, is_last_batch
     
     # プロテクティッドメソッド - サブクラスでオーバーライド可能
     

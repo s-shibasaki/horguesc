@@ -238,7 +238,6 @@ class TrifectaDataset(BaseDataset):
         
         # ターゲットデータを追加
         self.raw_data['target_trifecta'] = target_indices
-        self.raw_data['permutations'] = all_permutations
         
         logger.info(f"3連単ターゲットの作成完了: {len(all_permutations)}通りの順列、{num_races}レース")
 

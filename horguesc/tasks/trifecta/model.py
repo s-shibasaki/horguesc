@@ -1,216 +1,254 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from horguesc.core.base.model import BaseModel
 import logging
 import itertools
+import math
+from horguesc.core.base.model import BaseModel
 
 logger = logging.getLogger(__name__)
 
 class TrifectaModel(BaseModel):
-    """
-    3連単予測モデル。
-    各レースの出走馬から1〜3着の順番を予測する。
+    """Model for predicting trifecta (exact order of top 3 finishers) in horse races.
     
-    # TODO: このモデルはGitHub Copilotによって自動生成されたコードです。
-    # TODO: 内容の検証とロジックの確認が必要です。
-    # TODO: 特に注目すべき点:
-    #   - 注意機構のパラメータ設定の妥当性
-    #   - 馬同士の関係性の学習手法
-    #   - 出力層の設計
+    The model works as follows:
+    1. Encodes horse features using the shared FeatureEncoder
+    2. Processes each horse to get a performance representation
+    3. Calculates scores for all possible trifecta combinations
+    4. Outputs probabilities for each trifecta combination
     """
     
-    def __init__(self, config, encoder):
-        """
+    def __init__(self, config, encoder=None):
+        """Initialize the trifecta model.
+        
         Args:
-            config: 設定オブジェクト
-            encoder: 特徴量エンコーダー
+            config: Application configuration
+            encoder: Shared feature encoder (FeatureEncoder instance)
         """
         super().__init__(config, encoder)
         
-        # 設定からハイパーパラメータを取得
-        self.embedding_dim = self.encoder.output_dim if self.encoder else 64
+        # Get model parameters from config
         self.hidden_dim = config.getint('model.trifecta', 'hidden_dim', fallback=128)
         self.dropout_rate = config.getfloat('model.trifecta', 'dropout_rate', fallback=0.2)
         
-        # 各馬の特徴を処理するネットワーク
+        # Input dimension is the output dimension of the encoder
+        self.input_dim = self.encoder.output_dim if self.encoder else 128
+        
+        # Horse performance network (processes encoded features to get horse performance representation)
         self.horse_network = nn.Sequential(
-            nn.Linear(self.embedding_dim, self.hidden_dim),
+            nn.Linear(self.input_dim, self.hidden_dim),
             nn.ReLU(),
             nn.Dropout(self.dropout_rate),
-            nn.Linear(self.hidden_dim, self.hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(self.dropout_rate)
-        )
-        
-        # 馬同士の組み合わせを考慮する注意機構
-        self.attention = nn.MultiheadAttention(
-            embed_dim=self.hidden_dim,
-            num_heads=4,
-            dropout=self.dropout_rate,
-            batch_first=True
-        )
-        
-        # 3連単の組み合わせを予測する出力層
-        self.output_layer = nn.Sequential(
-            nn.Linear(self.hidden_dim * 3, self.hidden_dim),  # 3頭分の特徴を結合
+            nn.Linear(self.hidden_dim, self.hidden_dim // 2),
             nn.ReLU(),
             nn.Dropout(self.dropout_rate),
-            nn.Linear(self.hidden_dim, 1)  # 各組み合わせの確率を出力
+            # Output a vector representation of horse performance
+            nn.Linear(self.hidden_dim // 2, self.hidden_dim // 4)
         )
+        
+        # Race context encoder (optional - captures race-wide information)
+        self.context_encoder = nn.Sequential(
+            nn.Linear(self.hidden_dim // 4, self.hidden_dim // 8),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim // 8, self.hidden_dim // 4)
+        )
+        
+        # Combination scoring layer (scores trifecta combinations)
+        # Input: concatenated horse performance vectors for 3 horses (3 * (hidden_dim // 4))
+        self.combination_scorer = nn.Sequential(
+            nn.Linear(3 * (self.hidden_dim // 4), self.hidden_dim // 2),
+            nn.ReLU(),
+            nn.Dropout(self.dropout_rate),
+            nn.Linear(self.hidden_dim // 2, 1)
+        )
+        
+        # Loss function
+        self.loss_fn = nn.CrossEntropyLoss()
+        
+        logger.info(f"TrifectaModel initialized: input_dim={self.input_dim}, hidden_dim={self.hidden_dim}")
     
     def forward(self, inputs):
-        """
-        順伝播処理
+        """Forward pass for the trifecta model.
         
         Args:
-            inputs: 入力データ辞書
+            inputs: Dictionary containing input features
+                - Each feature is a tensor of shape [batch_size, max_horses]
+                  or [batch_size, max_horses, feature_dim] if already embedded
+        
+        Returns:
+            dict: Contains:
+                - 'logits': Raw scores for each trifecta combination [batch_size, num_combinations]
+                - 'probabilities': Probabilities for each combination [batch_size, num_combinations]
+                - 'horse_performances': Performance vectors for each horse [batch_size, max_horses, perf_dim]
+        """
+        batch_size = next(iter(inputs.values())).shape[0]
+        max_horses = next(iter(inputs.values())).shape[1]
+        
+        # Encode all horse features at once using the shared encoder
+        # Shape of encoded_features: [batch_size, max_horses, encoder_output_dim]
+        encoded_features = self.encoder(inputs)
+        
+        # Process each horse to get performance representations
+        # Reshape to process all horses from all batches at once
+        reshaped_features = encoded_features.view(-1, self.input_dim)
+        all_horse_performances = self.horse_network(reshaped_features)
+        
+        # Reshape back to [batch_size, max_horses, performance_dim]
+        performance_dim = all_horse_performances.shape[-1]
+        horse_performances = all_horse_performances.view(batch_size, max_horses, performance_dim)
+        
+        # Optional: Generate race context vector and enhance horse performances
+        # Average pool over all horses to get race-level context
+        race_contexts = torch.mean(horse_performances, dim=1, keepdim=True)  # [batch_size, 1, perf_dim]
+        enhanced_context = self.context_encoder(race_contexts)  # [batch_size, 1, perf_dim]
+        
+        # Add race context to each horse's performance (broadcasting)
+        horse_performances = horse_performances + enhanced_context
+        
+        # Generate all possible trifecta combinations (top 3 horses in order)
+        # For efficiency, we'll calculate scores for all possible 3-horse combinations
+        trifecta_scores = self._compute_trifecta_scores(horse_performances, max_horses)
+        
+        # Apply softmax to get probabilities
+        trifecta_probs = F.softmax(trifecta_scores, dim=1)
+        
+        return {
+            'logits': trifecta_scores,
+            'probabilities': trifecta_probs,
+            'horse_performances': horse_performances
+        }
+    
+    def _compute_trifecta_scores(self, horse_performances, max_horses):
+        """Compute scores for all possible trifecta combinations.
+        
+        This method efficiently calculates scores for all possible ordered combinations
+        of 3 horses from max_horses, using vectorized operations instead of loops.
+        
+        Args:
+            horse_performances: Tensor of horse performance vectors [batch_size, max_horses, perf_dim]
+            max_horses: Maximum number of horses per race
             
         Returns:
-            dict: {
-                'logits': 各3連単組み合わせのロジット (batch_size, num_permutations)
-                'permutations': 各組み合わせの馬番リスト [(1,2,3), (1,2,4), ...]
-            }
+            torch.Tensor: Scores for each trifecta combination [batch_size, num_combinations]
         """
-        # 特徴量エンコーダーで特徴量を埋め込み表現に変換
-        # inputs から umaban を取り出しておく（後で使用）
-        umaban = inputs.get('umaban')
+        batch_size = horse_performances.shape[0]
+        device = horse_performances.device
         
-        # エンコーダーで特徴量を埋め込み表現に変換
-        embedded = self.encoder(inputs)  # (batch_size, max_horses, embed_dim)
+        # Generate all possible trifecta combinations (1-indexed horse numbers)
+        # We consider horses with indices 1 through max_horses
+        all_combinations = list(itertools.permutations(range(1, max_horses + 1), 3))
+        num_combinations = len(all_combinations)
         
-        # Check for NaN values
-        self.check_tensor("embedded", embedded)
+        # Create tensors to hold the indices of horses for each position in the trifecta
+        # Subtract 1 to convert to 0-indexed for tensor indexing
+        first_place_indices = torch.tensor([combo[0] - 1 for combo in all_combinations], device=device)
+        second_place_indices = torch.tensor([combo[1] - 1 for combo in all_combinations], device=device)
+        third_place_indices = torch.tensor([combo[2] - 1 for combo in all_combinations], device=device)
         
-        batch_size, max_horses, _ = embedded.shape
-        
-        # 各馬の特徴を処理
-        horse_features = self.horse_network(embedded)  # (batch_size, max_horses, hidden_dim)
-        
-        # Check for NaN values
-        self.check_tensor("horse_features", horse_features)
-        
-        # 注意機構で馬同士の関係性を学習
-        attended_features, _ = self.attention(
-            horse_features, horse_features, horse_features,
-            key_padding_mask=(umaban == 0)  # パディング（umaban=0）部分をマスク
+        # Gather horse performance vectors for each position in each combination
+        # We'll create a batch dimension for the combinations to use batch gather
+        # Repeat horse performances for each combination
+        expanded_performances = horse_performances.unsqueeze(1).expand(
+            batch_size, num_combinations, max_horses, horse_performances.shape[2]
         )
         
-        # Check for NaN values
-        self.check_tensor("attended_features", attended_features)
+        # Create batch indices for gather operation
+        batch_indices = torch.arange(batch_size, device=device).view(batch_size, 1).expand(batch_size, num_combinations)
+        combo_indices = torch.arange(num_combinations, device=device).view(1, num_combinations).expand(batch_size, num_combinations)
         
-        # 最終的な各馬の表現を取得（残差接続で元の特徴と結合）
-        final_features = horse_features + attended_features  # (batch_size, max_horses, hidden_dim)
+        # Gather horse performances for each position
+        first_horse_perfs = expanded_performances[batch_indices, combo_indices, first_place_indices]
+        second_horse_perfs = expanded_performances[batch_indices, combo_indices, second_place_indices]
+        third_horse_perfs = expanded_performances[batch_indices, combo_indices, third_place_indices]
         
-        # Check for NaN values
-        self.check_tensor("final_features", final_features)
+        # Concatenate performances for all three positions
+        # Shape: [batch_size, num_combinations, 3 * perf_dim]
+        combined_perfs = torch.cat([first_horse_perfs, second_horse_perfs, third_horse_perfs], dim=2)
         
-        # 欠損値の処理（パディングされた部分の特徴量をゼロにする）
-        mask = (umaban != 0).unsqueeze(-1).float()  # (batch_size, max_horses, 1)
-        final_features = final_features * mask  # (batch_size, max_horses, hidden_dim)
+        # Calculate scores for each combination
+        # Reshape for the scorer network
+        reshaped_perfs = combined_perfs.view(-1, combined_perfs.shape[2])
+        scores = self.combination_scorer(reshaped_perfs).view(batch_size, num_combinations)
         
-        # 3連単の順列を生成
-        permutations = list(itertools.permutations(range(1, max_horses + 1), 3))
-        
-        # バッチ内の各レースについて全順列の確率を計算
-        all_logits = []
-        
-        # 各バッチでループ
-        for i in range(batch_size):
-            race_features = final_features[i]  # (max_horses, hidden_dim)
-            race_logits = []
-            
-            # 各順列でループ
-            for perm in permutations:
-                # 順列に含まれる馬のインデックス（0-indexed）
-                # umaban（馬番）は1から始まるため-1でインデックスに変換
-                idx1, idx2, idx3 = perm[0] - 1, perm[1] - 1, perm[2] - 1
-                
-                # それぞれの馬の特徴を取得
-                horse1_feat = race_features[idx1]  # (hidden_dim)
-                horse2_feat = race_features[idx2]  # (hidden_dim)
-                horse3_feat = race_features[idx3]  # (hidden_dim)
-                
-                # 3頭の特徴を結合
-                combined = torch.cat([horse1_feat, horse2_feat, horse3_feat], dim=0)  # (hidden_dim * 3)
-                
-                # この順列の確率を計算
-                logit = self.output_layer(combined)
-                race_logits.append(logit.squeeze())
-            
-            # 全順列の確率をテンソルにまとめる
-            race_logits = torch.stack(race_logits)  # (num_permutations)
-            all_logits.append(race_logits)
-        
-        # バッチ全体のロジットをテンソルにまとめる
-        logits = torch.stack(all_logits)  # (batch_size, num_permutations)
-        
-        # Check for NaN values
-        self.check_tensor("logits", logits)
-        
-        return {
-            'logits': logits,
-            'permutations': permutations
-        }
+        return scores
     
     def compute_loss(self, outputs, targets):
-        """
-        3連単予測の損失を計算
+        """Compute the loss for trifecta prediction.
         
         Args:
-            outputs: forward()の出力
-            targets: ターゲットデータ（'target_trifecta'を含む）
+            outputs: Output from forward pass containing 'logits'
+            targets: Dictionary containing 'target_trifecta' with correct combination indices
             
         Returns:
-            損失値
+            torch.Tensor: Loss value
         """
-        logits = outputs['logits']  # (batch_size, num_permutations)
-        target_indices = targets['target_trifecta']  # (batch_size)
+        logits = outputs['logits']
         
-        # クロスエントロピー損失を計算
-        loss = F.cross_entropy(logits, target_indices)
-        return loss
+        # Targets should be tensor with shape [batch_size] containing the index of the correct trifecta
+        if 'target_trifecta' in targets:
+            trifecta_targets = targets['target_trifecta']
+            
+            # If targets aren't already on the device, move them
+            if trifecta_targets.device != logits.device:
+                trifecta_targets = trifecta_targets.to(logits.device)
+            
+            loss = self.loss_fn(logits, trifecta_targets)
+            return loss
+        else:
+            logger.error("No 'target_trifecta' found in targets")
+            # Return a zero loss as a fallback (helps prevent training crashes)
+            return torch.tensor(0.0, device=logits.device, requires_grad=True)
     
     def compute_metrics(self, outputs, targets):
-        """
-        評価用メトリクスを計算
+        """Compute evaluation metrics for the trifecta model.
         
         Args:
-            outputs: forward()の出力
-            targets: ターゲットデータ
+            outputs: Output from forward pass
+            targets: Target values
             
         Returns:
-            dict: メトリクス
+            dict: Dictionary of metrics:
+                - accuracy: Proportion of correctly predicted trifectas
+                - top5_accuracy: Proportion of targets in top 5 predictions
+                - mean_rank: Average rank of the correct trifecta
         """
-        logits = outputs['logits']  # (batch_size, num_permutations)
-        target_indices = targets['target_trifecta']  # (batch_size)
+        metrics = {}
         
-        # 予測した最も確率の高い順列のインデックス
-        _, predicted_indices = torch.max(logits, dim=1)
+        if 'target_trifecta' not in targets:
+            logger.warning("No 'target_trifecta' found in targets, cannot compute metrics")
+            return metrics
         
-        # 正解率を計算
-        correct = (predicted_indices == target_indices).float()
+        # Get predictions and targets
+        probabilities = outputs['probabilities']
+        trifecta_targets = targets['target_trifecta'].to(probabilities.device)
+        
+        # Get the highest probability predictions
+        _, predicted_indices = torch.topk(probabilities, k=5, dim=1)
+        
+        # Calculate accuracy (exact match)
+        top1_predictions = predicted_indices[:, 0]
+        correct = (top1_predictions == trifecta_targets).float()
         accuracy = correct.mean().item()
+        metrics['accuracy'] = accuracy
         
-        return {
-            'accuracy': accuracy
-        }
-    
-    def check_tensor(self, tensor_name, tensor):
-        """
-        テンソルにNaN値が含まれているかチェックし、ログに記録
+        # Top-5 accuracy
+        is_in_top5 = torch.any(predicted_indices == trifecta_targets.unsqueeze(1), dim=1).float()
+        top5_accuracy = is_in_top5.mean().item()
+        metrics['top5_accuracy'] = top5_accuracy
         
-        Args:
-            tensor_name (str): テンソルの名前
-            tensor (torch.Tensor): チェック対象のテンソル
-            
-        Returns:
-            bool: NaN値が含まれている場合はTrue、それ以外はFalse
-        """
-        if torch.isnan(tensor).any():
-            logger.error(f"NaN detected in {tensor_name}")
-            non_nan_mask = ~torch.isnan(tensor)
-            if non_nan_mask.any():
-                logger.error(f"Non-NaN values in {tensor_name}: min={tensor[non_nan_mask].min()}, max={tensor[non_nan_mask].max()}")
-            return True
-        return False
+        # Calculate mean rank of correct prediction
+        batch_size = probabilities.shape[0]
+        sorted_indices = torch.argsort(probabilities, dim=1, descending=True)
+        
+        # For each sample, find the rank of the target
+        ranks = torch.zeros(batch_size, dtype=torch.long, device=probabilities.device)
+        for i in range(batch_size):
+            # Find the position of the target in the sorted predictions
+            target_idx = trifecta_targets[i].item()
+            # Add 1 so rank starts from 1, not 0
+            ranks[i] = (sorted_indices[i] == target_idx).nonzero().item() + 1
+        
+        mean_rank = ranks.float().mean().item()
+        metrics['mean_rank'] = mean_rank
+        
+        return metrics

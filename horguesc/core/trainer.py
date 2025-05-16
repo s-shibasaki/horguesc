@@ -164,7 +164,7 @@ class MultitaskTrainer:
                 dataset = self.task_datasets[task_name]['train']
                 
                 # Get batch for this task
-                batch = dataset.get_batch()
+                batch, _ = dataset.get_batch()  # Unpack tuple, ignore is_last_batch boolean
                 
                 # Create inputs and targets dictionaries
                 inputs = {}
@@ -205,7 +205,7 @@ class MultitaskTrainer:
                 # Add to combined loss
                 combined_loss += weighted_loss
                 task_losses[task_name] += loss.item()
-            
+        
             # Backward pass
             combined_loss.backward()
             
@@ -217,7 +217,7 @@ class MultitaskTrainer:
             log_interval = self.config.getint('training', 'log_interval', fallback=10)
             if step % log_interval == 0:
                 logger.info(f"Epoch {epoch+1}, Step {step}/{steps}, Loss: {combined_loss.item():.4f}")
-        
+    
         # Log epoch results
         avg_loss = total_loss / steps
         logger.info(f"Epoch {epoch+1} completed, Avg Loss: {avg_loss:.4f}")
@@ -248,47 +248,82 @@ class MultitaskTrainer:
                 # Get the validation dataset for this task
                 dataset = self.task_datasets[task_name]['eval']
                 
-                # Get all validation data
-                val_data = dataset.get_all_data()
+                # Process all validation data using batches
+                all_outputs = {}
+                all_targets = {}
                 
-                # Create inputs and targets dictionaries
-                inputs = {}
-                targets = {}
-                
-                # Separate inputs and targets
-                for key, value in val_data.items():
-                    if key == 'target' or key.startswith('target_'):
-                        # Target data - these should already be tensors from BaseDataset
-                        if isinstance(value, torch.Tensor):
-                            targets[key] = value.to(self.device)
+                # Continue fetching batches until we've processed all validation data
+                while True:
+                    batch_data, is_last_batch = dataset.get_batch()
+                    
+                    # Create inputs and targets dictionaries
+                    batch_inputs = {}
+                    batch_targets = {}
+                    
+                    # Separate inputs and targets
+                    for key, value in batch_data.items():
+                        if key == 'target' or key.startswith('target_'):
+                            # Target data - these should already be tensors from BaseDataset
+                            if isinstance(value, torch.Tensor):
+                                batch_targets[key] = value.to(self.device)
+                            else:
+                                # For non-tensor targets, just pass them as-is
+                                batch_targets[key] = value
                         else:
-                            # For non-tensor targets, just pass them as-is
-                            targets[key] = value
+                            # Input data
+                            if isinstance(value, torch.Tensor):
+                                batch_inputs[key] = value.to(self.device)
+                            else:
+                                # For non-tensor inputs, just pass them as-is
+                                batch_inputs[key] = value
+                    
+                    # Forward pass
+                    batch_outputs = model(batch_inputs)
+                    
+                    # Accumulate outputs and targets
+                    for key, value in batch_outputs.items():
+                        if key not in all_outputs:
+                            all_outputs[key] = []
+                        all_outputs[key].append(value)
+                    
+                    for key, value in batch_targets.items():
+                        if key not in all_targets:
+                            all_targets[key] = []
+                        all_targets[key].append(value)
+                    
+                    # If this was the last batch, break the loop
+                    if is_last_batch:
+                        break
+                
+                # Combine accumulated tensors
+                combined_outputs = {}
+                for key, values in all_outputs.items():
+                    if isinstance(values[0], torch.Tensor):
+                        combined_outputs[key] = torch.cat(values, dim=0)
                     else:
-                        # Input data
-                        if isinstance(value, torch.Tensor):
-                            inputs[key] = value.to(self.device)
-                        else:
-                            # For non-tensor inputs, just pass them as-is
-                            inputs[key] = value
+                        combined_outputs[key] = values
                 
-                # Forward pass
-                outputs = model(inputs)
+                combined_targets = {}
+                for key, values in all_targets.items():
+                    if isinstance(values[0], torch.Tensor):
+                        combined_targets[key] = torch.cat(values, dim=0)
+                    else:
+                        combined_targets[key] = values
                 
                 # Compute loss
-                loss = model.compute_loss(outputs, targets)
+                loss = model.compute_loss(combined_outputs, combined_targets)
                 task_metrics[task_name] = {'loss': loss.item()}
                 
                 # Additional metrics could be computed here
-                self._compute_additional_metrics(task_name, outputs, targets, task_metrics)
+                self._compute_additional_metrics(task_name, combined_outputs, combined_targets, task_metrics)
+        
+        # Log validation results
+        logger.info(f"Validation after epoch {epoch+1}:")
+        for task_name, metrics in task_metrics.items():
+            metrics_str = ", ".join(f"{k}: {v:.4f}" for k, v in metrics.items())
+            logger.info(f"  {task_name}: {metrics_str}")
             
-            # Log validation results
-            logger.info(f"Validation after epoch {epoch+1}:")
-            for task_name, metrics in task_metrics.items():
-                metrics_str = ", ".join(f"{k}: {v:.4f}" for k, v in metrics.items())
-                logger.info(f"  {task_name}: {metrics_str}")
-                
-            return task_metrics
+        return task_metrics
     
     def _compute_additional_metrics(self, task_name, outputs, targets, metrics_dict):
         """Compute additional metrics for validation."""

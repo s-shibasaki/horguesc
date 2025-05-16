@@ -68,8 +68,8 @@ class TestFeatureEncoder:
         
         # 出力次元
         assert encoder.numerical_total_dim == 16  # 8 + 8
-        assert encoder.embedding_total_dim > 0
-        assert encoder.output_dim == encoder.numerical_total_dim + encoder.embedding_total_dim
+        assert encoder.categorical_total_dim > 0
+        assert encoder.output_dim == encoder.numerical_total_dim + encoder.categorical_total_dim
     
     def test_forward_1d_input(self, mock_config, group_cardinalities):
         """1次元入力での順伝播をテスト"""
@@ -134,10 +134,23 @@ class TestFeatureEncoder:
         
         # 出力形状の確認
         assert output.shape[0] == batch_size
-        # incomeとcountryの埋め込みがないため、出力次元は小さくなる
-        expected_dim = (encoder.num_embedding_dims['numeric_basic'] + 
-                         encoder.cat_embedding_dims['cat_personal'])
-        assert output.shape[1] == expected_dim
+        # 仕様変更: encoder.forward は常に完全な出力次元を持つ
+        assert output.shape[1] == encoder.output_dim
+        
+        # 埋め込まれた特徴量の位置の値がゼロ以外であることを確認
+        age_start, age_end = encoder.feature_to_position["age"]
+        gender_start, gender_end = encoder.feature_to_position["gender"]
+        
+        # age と gender の埋め込みは非ゼロであるべき
+        assert not torch.allclose(output[:, age_start:age_end], torch.zeros_like(output[:, age_start:age_end]))
+        assert not torch.allclose(output[:, gender_start:gender_end], torch.zeros_like(output[:, gender_start:gender_end]))
+        
+        # 欠損している特徴量の位置はゼロであるべき
+        income_start, income_end = encoder.feature_to_position["income"]
+        country_start, country_end = encoder.feature_to_position["country"]
+        
+        assert torch.allclose(output[:, income_start:income_end], torch.zeros_like(output[:, income_start:income_end]))
+        assert torch.allclose(output[:, country_start:country_end], torch.zeros_like(output[:, country_start:country_end]))
     
     def test_suggest_embedding_dim(self, mock_config, group_cardinalities):
         """カーディナリティに基づく埋め込み次元の提案をテスト"""

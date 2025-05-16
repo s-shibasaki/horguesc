@@ -68,6 +68,11 @@ class FeatureEncoder(nn.Module):
                 logger.warning(f"カテゴリグループ '{group_name}' のカーディナリティが指定されていません。"
                               f"デフォルト値 ({cardinality}) を使用します。")
             
+            # Add to _suggest_embedding_dim
+            if cardinality > 10000:
+                # Use hashing trick or dimensionality reduction for extremely high cardinality
+                logger.warning(f"Very high cardinality ({cardinality}) detected for {group_name}")
+            
             # カーディナリティに基づいて埋め込み次元を決定
             embedding_dim = self._suggest_embedding_dim(cardinality)
             
@@ -86,12 +91,42 @@ class FeatureEncoder(nn.Module):
         # 出力次元の計算
         self.numerical_total_dim = sum(self.num_embedding_dims[self.feature_groups['numerical'][feature]] 
                                       for feature in self.config.numerical_features)
-        self.embedding_total_dim = sum(self.cat_embedding_dims[self.feature_groups['categorical'][feature]] 
+        self.categorical_total_dim = sum(self.cat_embedding_dims[self.feature_groups['categorical'][feature]] 
                                       for feature in self.config.categorical_features)
-        self.output_dim = self.numerical_total_dim + self.embedding_total_dim
+        self.output_dim = self.numerical_total_dim + self.categorical_total_dim
+        
+        # 特徴量ごとの埋め込み位置マッピングを作成
+        self.feature_to_position = self._create_feature_position_mapping()
         
         logger.info(f"FeatureEncoder 初期化完了: 出力次元={self.output_dim} "
-                   f"(数値特徴量={self.numerical_total_dim}, カテゴリ埋め込み={self.embedding_total_dim})")
+                   f"(数値特徴量={self.numerical_total_dim}, カテゴリ埋め込み={self.categorical_total_dim})")
+    
+    def _create_feature_position_mapping(self):
+        """各特徴量の埋め込み結果が最終出力テンソルのどの位置に配置されるかのマッピングを作成します。
+        
+        Returns:
+            dict: 特徴量名→(開始位置, 終了位置)のマッピング
+        """
+        mapping = {}
+        current_position = 0
+        
+        # 数値特徴量の位置を決定
+        for feature_name in self.config.numerical_features:
+            group_name = self.feature_groups['numerical'][feature_name]
+            embed_dim = self.num_embedding_dims[group_name]
+            
+            mapping[feature_name] = (current_position, current_position + embed_dim)
+            current_position += embed_dim
+    
+        # カテゴリカル特徴量の位置を決定
+        for feature_name in self.config.categorical_features:
+            group_name = self.feature_groups['categorical'][feature_name]
+            embed_dim = self.cat_embedding_dims[group_name]
+            
+            mapping[feature_name] = (current_position, current_position + embed_dim)
+            current_position += embed_dim
+        
+        return mapping
     
     def _suggest_embedding_dim(self, cardinality):
         """カーディナリティに基づいて適切な埋め込み次元を提案します。
@@ -139,29 +174,32 @@ class FeatureEncoder(nn.Module):
         Returns:
             torch.Tensor: 結合された埋め込み表現
         """
-        # 各特徴量の埋め込み結果を格納するリスト
-        embeddings = []
-        batch_size = None
-        input_shape = None
+        # 入力形状情報を抽出
+        encoder_features = set(self.config.numerical_features + self.config.categorical_features)
+        valid_features = [f for f in encoder_features if f in features]
         
-        # エンコードする特徴量の形状を確認
-        encoder_features = []
-        for feature_name in features:
-            if feature_name in self.config.numerical_features or feature_name in self.config.categorical_features:
-                encoder_features.append(feature_name)
-                if input_shape is None:
-                    input_shape = features[feature_name].shape
-                    batch_size = input_shape[0]
+        if not valid_features:
+            logger.warning("有効な特徴量が入力に含まれていません")
+            # デフォルトのテンソルを返す
+            device = next(self.parameters()).device
+            return torch.zeros(1, self.output_dim, device=device)
         
-        # エンコードする特徴量の形状が一致するか確認
-        for feature_name in encoder_features:
-            if features[feature_name].shape != input_shape:
-                raise ValueError(f"エンコードされる特徴量は同じ形状である必要があります。"
-                               f"'{feature_name}'の形状 {features[feature_name].shape} が"
-                               f"他のエンコード特徴量の形状 {input_shape} と異なります。")
+        # Add validation that all features have compatible shapes
+        shapes = {f: features[f].shape for f in features if f in valid_features}
+        if len(set(shapes.values())) > 1:
+            raise ValueError(f"Features have inconsistent shapes: {shapes}")
         
-        # 各特徴量の埋め込みを計算
-        for feature_name in encoder_features:
+        # 形状情報を最初の有効な特徴量から取得
+        first_feature = features[valid_features[0]]
+        input_shape = first_feature.shape
+
+        # 結果を格納するゼロテンソルを作成
+        device = first_feature.device
+        output_shape = list(input_shape) + [self.output_dim]
+        combined = torch.zeros(output_shape, device=device)
+        
+        # 各特徴量の埋め込み計算と結果テンソルへの配置
+        for feature_name in valid_features:
             value = features[feature_name]
             
             if feature_name in self.config.categorical_features:
@@ -178,7 +216,10 @@ class FeatureEncoder(nn.Module):
                 # 元の形状に戻す + 埋め込み次元
                 new_shape = list(original_shape) + [flat_embeddings.size(-1)]
                 embedding = flat_embeddings.view(new_shape)
-                embeddings.append(embedding)
+                
+                # 結果テンソルの適切な位置に配置
+                start_pos, end_pos = self.feature_to_position[feature_name]
+                combined[..., start_pos:end_pos] = embedding
                 
             elif feature_name in self.config.numerical_features:
                 # この特徴量のグループを特定
@@ -212,19 +253,36 @@ class FeatureEncoder(nn.Module):
                     expanded_mask = mask.unsqueeze(-1).expand_as(embedding)
                     embedding = embedding * expanded_mask
                 
-                embeddings.append(embedding)
+                # 結果テンソルの適切な位置に配置
+                start_pos, end_pos = self.feature_to_position[feature_name]
+                combined[..., start_pos:end_pos] = embedding
         
-        # すべての埋め込みを最後の次元で結合
-        if embeddings:
-            combined = torch.cat(embeddings, dim=-1)
-            return combined
+        return combined
+    
+    def get_feature_embedding(self, feature_name, value):
+        """Extract embedding for a single feature (useful for testing)
         
-        # 特徴量がない場合は0テンソルを返す
-        device = next(self.parameters()).device
-        if input_shape:
-            # 入力と同じ形状 + 出力次元
-            output_shape = list(input_shape) + [self.output_dim]
-            return torch.zeros(*output_shape, device=device)
+        Args:
+            feature_name: 特徴量の名前
+            value: 埋め込む値のテンソル
+            
+        Returns:
+            torch.Tensor: 指定特徴量の埋め込み
+        """
+        if feature_name in self.config.categorical_features:
+            group_name = self.feature_groups['categorical'][feature_name]
+            return self.categorical_embeddings[group_name](value)
+        elif feature_name in self.config.numerical_features:
+            group_name = self.feature_groups['numerical'][feature_name]
+            # NaN処理を適用
+            mask = ~torch.isnan(value)
+            clean_value = torch.where(mask, value, torch.zeros_like(value))
+            embedding = self.numerical_embeddings[group_name](clean_value.unsqueeze(-1))
+            
+            # NaN値があった位置を0にマスク
+            if not mask.all():
+                expanded_mask = mask.unsqueeze(-1).expand_as(embedding)
+                embedding = embedding * expanded_mask
+            return embedding
         else:
-            # デフォルトの形状
-            return torch.zeros(batch_size or 1, self.output_dim, device=device)
+            raise ValueError(f"Unknown feature: {feature_name}")

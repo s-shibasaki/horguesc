@@ -6,6 +6,7 @@ from collections import defaultdict
 from horguesc.database.sql_builder import SQLBuilder
 import itertools
 import torch
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,7 @@ class TrifectaDataset(BaseDataset):
         # 特徴量データの2D配列を準備
         kyoso_ids = []
         feature_arrays = defaultdict(list)
+        horse_counts = []  # 各レースの実際の出走馬数を保存
         
         # 事前定義された特徴量名リストを使用
         features = list(self.FEATURE_DEFINITIONS.keys())
@@ -158,6 +160,7 @@ class TrifectaDataset(BaseDataset):
                 continue
                 
             kyoso_ids.append(kyoso_id)
+            horse_counts.append(len(horses))  # 実際の出走馬数を記録
             
             # 各特徴量について処理
             for feature in features:
@@ -172,7 +175,8 @@ class TrifectaDataset(BaseDataset):
         
         # データを返す（kyoso_idはリストのまま、特徴量のみNumPy配列に変換）
         formatted_data = {
-            'kyoso_id': kyoso_ids
+            'kyoso_id': kyoso_ids,
+            'horse_count': np.array(horse_counts, dtype=np.int32)  # 追加: 各レースの実際の出走馬数
         }
         
         for feature, values_list in feature_arrays.items():
@@ -184,60 +188,93 @@ class TrifectaDataset(BaseDataset):
         """
         3連単のターゲットを作成する
         
-        - 各レースについて、馬番と確定着順の対応を作成
-        - 全ての可能な3連単順列を生成
-        - 実際の着順1-2-3を正解とするターゲットを作成
+        - 各レースについて、確定着順に基づいて3連単の正解インデックスを特定
+        - インデックスベースで処理し、馬番ではなく配列の位置を使用
+        - 同着の場合も正しく処理（着順の数字ではなく順位で判断）
         """
-        if 'kakutei_chakujun' not in self.raw_data or 'umaban' not in self.raw_data:
-            logger.error("確定着順またはumaban（馬番）データがありません")
+        logger.info("3連単ターゲット情報の作成を開始")
+        
+        if 'kakutei_chakujun' not in self.raw_data or len(self.raw_data['kakutei_chakujun']) == 0:
+            logger.warning("確定着順データがないため、3連単ターゲットを作成できません")
             return
-        
-        num_races = len(self.raw_data['kyoso_id'])
-        if num_races == 0:
-            logger.warning("レースデータがありません")
-            return
-        
-        max_horses = self.raw_data['umaban'].shape[1]
-        
-        # 全ての馬番での可能な3連単順列を生成
-        all_permutations = list(itertools.permutations(range(1, max_horses + 1), 3))
-        
-        # ターゲットインデックス配列を初期化
-        target_indices = np.zeros(num_races, dtype=np.int64)
-        
-        for race_idx in range(num_races):
-            umaban_array = self.raw_data['umaban'][race_idx]
-            chakujun_array = self.raw_data['kakutei_chakujun'][race_idx]
             
-            # 有効な馬番と着順のペアを作成
-            valid_horses = [(int(umaban), int(chakujun)) 
-                           for umaban, chakujun in zip(umaban_array, chakujun_array) 
-                           if umaban is not None and chakujun is not None]
-            
-            # 着順でソート
-            valid_horses.sort(key=lambda x: x[1])
-            
-            # 上位3着の馬番を取得
-            top3_horses = [horse[0] for horse in valid_horses[:3]]
-            
-            # 3頭揃わない場合はスキップ
-            if len(top3_horses) < 3:
-                logger.debug(f"レース {self.raw_data['kyoso_id'][race_idx]} は3着までの馬が揃っていません")
-                continue
-            
-            # 正解の順列を作成
-            correct_perm = tuple(top3_horses)
-            
-            # 正解順列のインデックスを見つける
-            try:
-                correct_index = all_permutations.index(correct_perm)
-                target_indices[race_idx] = correct_index
-            except ValueError:
-                # 馬番がリスト範囲外の場合など
-                logger.warning(f"レース {self.raw_data['kyoso_id'][race_idx]} の正解順列 {correct_perm} が見つかりませんでした")
+        # レース数と最大出走頭数を取得
+        n_races = len(self.raw_data['kyoso_id'])
+        max_horses = self.raw_data['kakutei_chakujun'].shape[1]
         
-        # ターゲットデータを追加
-        self.raw_data['target_trifecta'] = target_indices
+        # 各レースの実際の出走頭数
+        horse_counts = self.raw_data['horse_count']
         
-        logger.info(f"3連単ターゲットの作成完了: {len(all_permutations)}通りの順列、{num_races}レース")
-
+        # 全ての可能な3連単の組み合わせを生成
+        all_combinations = list(itertools.permutations(range(max_horses), 3))
+        
+        # 各レースの正解3連単のインデックスを格納する配列
+        target_trifecta = np.full(n_races, -1, dtype=np.int64)
+        
+        # 各レースについて処理
+        for race_idx in range(n_races):
+            # このレースの着順データを取得
+            chakujun = self.raw_data['kakutei_chakujun'][race_idx]
+            
+            # 実際の出走頭数（馬の数）
+            race_horse_count = int(horse_counts[race_idx])
+            
+            # NoneやNaNを大きな値に置き換えて、有効な馬だけを考慮
+            chakujun_array = np.array([
+                999 if (i >= race_horse_count or pd.isna(v) or v is None)
+                else int(v) for i, v in enumerate(chakujun)
+            ])
+            
+            # インデックスと着順のマッピングを作成
+            idx_with_chakujun = [(i, place) for i, place in enumerate(chakujun_array)]
+            
+            # 着順で並べ替え
+            idx_with_chakujun.sort(key=lambda x: x[1])
+            
+            # 上位3頭の馬インデックスを取得（同着を考慮、着順の値ではなく順位で判断）
+            top3_indices = [pair[0] for pair in idx_with_chakujun[:3]]
+            
+            # 上位3頭が揃っていることを確認
+            if len(top3_indices) == 3:
+                # この組み合わせがall_combinationsの何番目かを特定
+                target_combo = tuple(top3_indices)
+                
+                # all_combinations内でのインデックスを検索
+                try:
+                    combo_idx = all_combinations.index(target_combo)
+                    target_trifecta[race_idx] = combo_idx
+                except ValueError:
+                    # 組み合わせがall_combinationsに含まれない場合（通常発生しない）
+                    logger.warning(f"レース {self.raw_data['kyoso_id'][race_idx]} の組み合わせが見つかりません: {target_combo}")
+            else:
+                # 上位3頭が特定できない場合（データ異常）
+                logger.warning(f"レース {self.raw_data['kyoso_id'][race_idx]} の上位3頭を特定できません")
+        
+        # ターゲットを追加
+        # -1の値（組み合わせが見つからなかったレース）を除外
+        valid_races = target_trifecta >= 0
+        valid_indices = np.where(valid_races)[0]  # Convert boolean mask to indices
+        
+        if len(valid_indices) > 0:
+            # 有効なレースのみを保持
+            filtered_data = {}
+            
+            for key, value in self.raw_data.items():
+                # Type-specific filtering based on data type
+                if isinstance(value, np.ndarray):
+                    filtered_data[key] = value[valid_races]
+                elif isinstance(value, list):
+                    filtered_data[key] = [value[i] for i in valid_indices]
+                else:
+                    # Handle other data types or copy as is if filtering not applicable
+                    filtered_data[key] = value
+                    
+            # Update raw_data with filtered data
+            self.raw_data = filtered_data
+            
+            # ターゲットデータを追加
+            self.raw_data['target_trifecta'] = target_trifecta[valid_races]
+            
+            logger.info(f"3連単ターゲット作成完了: {len(valid_indices)}/{n_races} レースで有効なターゲットを作成")
+        else:
+            logger.warning("有効なターゲットが作成できませんでした")

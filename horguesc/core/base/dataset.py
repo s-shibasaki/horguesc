@@ -183,7 +183,7 @@ class BaseDataset(abc.ABC):
             return date_value
             
         return datetime.strptime(date_value, '%Y-%m-%d')
-    
+        
     def _process_features(self, raw_data: Dict[str, Any], feature_processor: Any) -> Dict[str, np.ndarray]:
         """特徴量を処理します。サブクラスでカスタム処理が必要な場合はオーバーライドします。
         
@@ -211,46 +211,106 @@ class BaseDataset(abc.ABC):
         # 処理済みキーのトラッキング
         processed_keys = set()
         
+        # 処理カウンター
+        numerical_processed = []
+        categorical_processed = []
+        target_copied = []
+        auxiliary_copied = []
+        
+        logger.info(f"特徴量データ処理の開始: {len(raw_data)}個のキーを処理します")
+        
         # 数値特徴量の処理
         for feature_name in numerical_features:
             if feature_name in raw_data:
+                logger.debug(f"数値特徴量 '{feature_name}' の正規化処理を実行します")
                 processed[feature_name] = feature_processor.normalize_numerical_feature(
                     feature_name, raw_data[feature_name]
                 )
                 processed_keys.add(feature_name)
-    
+                numerical_processed.append(feature_name)
+                logger.debug(f"数値特徴量 '{feature_name}' の正規化が完了しました: "
+                        f"形状={processed[feature_name].shape}, 型={processed[feature_name].dtype}")
+
         # カテゴリカル特徴量の処理
         for feature_name in categorical_features:
             if feature_name in raw_data:
+                logger.debug(f"カテゴリカル特徴量 '{feature_name}' のエンコード処理を実行します")
                 processed[feature_name] = feature_processor.encode_categorical_feature(
                     feature_name, raw_data[feature_name]
                 )
                 processed_keys.add(feature_name)
-                
+                categorical_processed.append(feature_name)
+                logger.debug(f"カテゴリカル特徴量 '{feature_name}' のエンコードが完了しました: "
+                        f"形状={processed[feature_name].shape}, 型={processed[feature_name].dtype}")
+            
         # ターゲット変数をそのままコピー (target または target_で始まるキー)
         for key, value in raw_data.items():
             if key == 'target' or key.startswith('target_'):
                 if isinstance(value, np.ndarray):
+                    logger.debug(f"ターゲット変数 '{key}' をテンソルに変換します (原型: {value.dtype}, 形状: {value.shape})")
                     processed[key] = torch.tensor(value)
+                    logger.debug(f"ターゲット変数 '{key}' の変換が完了しました: "
+                            f"形状={processed[key].shape}, 型={processed[key].dtype}")
                 else:
                     # NumPy配列でない場合はそのまま保存
+                    logger.debug(f"ターゲット変数 '{key}' はNumPy配列でないため、そのままコピーします (型: {type(value).__name__})")
                     processed[key] = value
                 processed_keys.add(key)
-            
+                target_copied.append(key)
+        
         # 自動的に処理されていない残りのデータを含める
         # AUXILIARY_KEYS を明示的に定義する必要がなくなる
         for key, value in raw_data.items():
             if key not in processed_keys:
-                processed[key] = value
-            
-        # 処理結果をログに記録
-        numerical_count = len([f for f in numerical_features if f in raw_data])
-        categorical_count = len([f for f in categorical_features if f in raw_data])
-        targets_count = len([k for k in processed.keys() if k == 'target' or k.startswith('target_')])
-        auxiliary_count = len([k for k in processed.keys() if k not in processed_keys])
+                # NumPy配列はテンソルに変換（対応可能な型のみ）
+                if isinstance(value, np.ndarray):
+                    try:
+                        # NumPy object配列はテンソルに変換せずそのまま保持
+                        if value.dtype == np.dtype('O'):
+                            logger.debug(f"補助データ '{key}' はnumpy.object_型のため、NumPy配列のまま保持します")
+                            processed[key] = value
+                        else:
+                            logger.debug(f"補助データ '{key}' をテンソルに変換します (原型: {value.dtype}, 形状: {value.shape})")
+                            processed[key] = torch.tensor(value)
+                            logger.debug(f"補助データ '{key}' の変換が完了しました: "
+                                    f"形状={processed[key].shape}, 型={processed[key].dtype}")
+                    except TypeError:
+                        # 変換できない場合はNumPy配列のまま保持
+                        logger.debug(f"補助データ '{key}' はテンソルに変換できないため、配列のまま保持します")
+                        processed[key] = value
+                else:
+                    # その他のデータ型はそのままコピー
+                    logger.debug(f"補助データ '{key}' はNumPy配列でないため、そのままコピーします (型: {type(value).__name__})")
+                    processed[key] = value
+                auxiliary_copied.append(key)
         
-        logger.info(f"処理された特徴量: 数値 {numerical_count}個, カテゴリ {categorical_count}個, "
-                    f"ターゲット {targets_count}個, 補助データ {auxiliary_count}個")
+        # 処理結果の詳細をログに記録
+        logger.info(f"処理された特徴量: 数値 {len(numerical_processed)}個, カテゴリ {len(categorical_processed)}個, "
+                    f"ターゲット {len(target_copied)}個, 補助データ {len(auxiliary_copied)}個")
+        
+        # 処理した特徴量の詳細をログに出力
+        if numerical_processed:
+            logger.info(f"処理された数値特徴量: {', '.join(numerical_processed)}")
+        
+        if categorical_processed:
+            logger.info(f"処理されたカテゴリカル特徴量: {', '.join(categorical_processed)}")
+        
+        if target_copied:
+            logger.info(f"コピー/変換されたターゲット変数: {', '.join(target_copied)}")
+        
+        if auxiliary_copied:
+            logger.info(f"コピー/変換された補助データ: {', '.join(auxiliary_copied)}")
+        
+        # メモリ使用状況の概要を出力
+        total_memory = 0
+        for key, value in processed.items():
+            if isinstance(value, torch.Tensor):
+                size_bytes = value.element_size() * value.nelement()
+                total_memory += size_bytes
+                if size_bytes > 1000000:  # 1MB以上のテンソルの場合
+                    logger.debug(f"大きなテンソル '{key}': {size_bytes/1048576:.2f} MB")
+        
+        logger.info(f"処理後のデータの総メモリ使用量(テンソルのみ): {total_memory/1048576:.2f} MB")
         
         return processed
     

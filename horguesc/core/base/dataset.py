@@ -67,9 +67,10 @@ class BaseDataset(abc.ABC):
         self._next_batch_index = 0
         self.batch_size = batch_size
         
-        # データ拡張のパラメータを設定
-        self.num_noise_scale = 0.05  # 数値特徴量に加えるノイズのスケール
-        self.cat_null_prob = 0.05    # カテゴリカル特徴量をNullにする確率
+        # データ拡張のパラメータを設定から読み込む
+        self.num_noise_scale = config.getfloat('augmentation', 'num_noise_scale', fallback=0.1)
+        self.num_nan_prob = config.getfloat('augmentation', 'num_nan_prob', fallback=0.05)
+        self.cat_null_prob = config.getfloat('augmentation', 'cat_null_prob', fallback=0.05)
         
         # 追加の引数を保存
         self.args = args
@@ -340,7 +341,26 @@ class BaseDataset(abc.ABC):
                     augmented_data[feature_name] = tensor + noise
                     
                     logger.debug(f"数値特徴量 '{feature_name}' にスケール {noise_scale:.4f} のノイズを追加しました")
-    
+                    
+                    # ランダムにNaNに設定
+                    # num_nan_probの確率で各要素をNaNに設定
+                    nan_prob = self.num_nan_prob
+                    nan_mask = torch.rand_like(tensor, dtype=torch.float) < nan_prob
+                    
+                    # 既にNaNになっている場所はマスクから除外
+                    nan_mask = nan_mask & mask
+                    
+                    if nan_mask.any():
+                        # マスクが適用される要素数を記録
+                        num_nanned = nan_mask.sum().item()
+                        
+                        # NaNに設定
+                        result = tensor.clone()
+                        result[nan_mask] = float('nan')
+                        augmented_data[feature_name] = result
+                        
+                        logger.debug(f"数値特徴量 '{feature_name}' の {num_nanned} 要素をランダムにNaNに設定しました")
+
         # カテゴリカル特徴量をランダムにNULLに設定
         for feature_name in self.config.categorical_features:
             if feature_name in augmented_data and isinstance(augmented_data[feature_name], torch.Tensor):
@@ -360,7 +380,7 @@ class BaseDataset(abc.ABC):
                     augmented_data[feature_name] = tensor.masked_fill(null_mask, 0)
                     
                     logger.debug(f"カテゴリカル特徴量 '{feature_name}' の {num_nulled} 要素をランダムにNULLに設定しました")
-    
+
         return augmented_data
     
     def _init_batch_indices(self, shuffle=None) -> None:

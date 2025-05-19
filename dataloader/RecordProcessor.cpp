@@ -90,6 +90,7 @@ bool RecordProcessor::Initialize() {
 			"creation_date DATE, "
 			"kishu_code INT, "
 			"seibetsu_kubun CHAR(1), "
+			"birth_date DATE, "  // Added birth_date field
 			"PRIMARY KEY (kishu_code))";
 		command->ExecuteNonQuery();
 

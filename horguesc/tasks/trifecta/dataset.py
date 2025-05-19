@@ -16,48 +16,7 @@ class TrifectaDataset(BaseDataset):
     def __init__(self, *args, **kwargs):
         """TrifectaDatasetの初期化"""
         super().__init__(*args, **kwargs)
-        
-        # 特徴量定義を__init__内に移動（簡略化版）
-        self.FEATURE_DEFINITIONS = {
-            # 競走ID用のカラム
-            'kaisai_date': 'se.kaisai_date',
-            'keibajo_code': 'se.keibajo_code',
-            'kaisai_kai': 'se.kaisai_kai',
-            'kaisai_nichime': 'se.kaisai_nichime',
-            'kyoso_bango': 'se.kyoso_bango',
-            
-            # 数値特徴量
-            'wakuban': 'CASE WHEN se.wakuban != 0 THEN se.wakuban ELSE NULL END',
-            'umaban': 'CASE WHEN se.umaban != 0 THEN se.umaban ELSE NULL END',
-            'futan_juryo': 'CASE WHEN se.futan_juryo != 0 THEN se.futan_juryo ELSE NULL END',
-            'bataiju': 'CASE WHEN se.bataiju BETWEEN 2 AND 998 THEN se.bataiju ELSE NULL END',
-            'zogensa': 'CASE WHEN se.zogensa BETWEEN -998 AND 998 THEN se.zogensa ELSE NULL END',
-            'kyori': 'CASE WHEN ra.kyori != 0 THEN ra.kyori ELSE NULL END',
-            # days_beforeはSQL生成時に追加するので、ここでは定義しない
-            
-            # カテゴリ特徴量
-            'ketto_toroku_bango': 'CASE WHEN se.ketto_toroku_bango != 0 THEN se.ketto_toroku_bango ELSE NULL END',
-            'blinker_shiyo_kubun': 'se.blinker_shiyo_kubun',
-            'kishu_code': 'CASE WHEN se.kishu_code != 0 THEN se.kishu_code ELSE NULL END',
-            'kishu_minarai_code': 'se.kishu_minarai_code',
-            'track_code': 'CASE WHEN ra.track_code != \'0\' THEN ra.track_code ELSE NULL END',
-            'course_kubun': 'CASE WHEN ra.course_kubun != \'0\' THEN ra.course_kubun ELSE NULL END',
-            'tenko_code': 'CASE WHEN ra.tenko_code != \'0\' THEN ra.tenko_code ELSE NULL END',
-            'babajotai_code': 'CASE WHEN ra.babajotai_code != \'0\' THEN ra.babajotai_code ELSE NULL END',
-            
-            # ターゲット変数
-            'kakutei_chakujun': 'CASE WHEN se.kakutei_chakujun != 0 THEN se.kakutei_chakujun ELSE NULL END',
-        }
-        
-        # 競走IDを構成するカラム定義も__init__内に移動
-        self.KYOSO_ID_COLUMNS = [
-            'kaisai_date',
-            'keibajo_code', 
-            'kaisai_kai', 
-            'kaisai_nichime', 
-            'kyoso_bango'
-        ]
-        
+    
     def _fetch_data(self, db_ops=None, **kwargs) -> None:
         """データベースからTrifectaデータを取得する"""
         logger.info(f"Trifectaデータの取得を開始: {self.start_date} から {self.end_date} まで")
@@ -71,45 +30,83 @@ class TrifectaDataset(BaseDataset):
         start_date_str = self.start_date.strftime('%Y-%m-%d') if self.start_date else None
         end_date_str = self.end_date.strftime('%Y-%m-%d') if self.end_date else None
         
-        # SQLBuilderでクエリを構築
-        builder = SQLBuilder("se")
-        
-        # 全ての特徴量を選択（ID用カラムも含む）
-        feature_definitions = self.FEATURE_DEFINITIONS.copy()
-        
-        # days_before特徴量の定義を作成
-        # - 訓練モードの場合: end_dateを基準日として使用
-        # - 評価/推論モードの場合: 常に0を設定（days_before = 0）
+        # Get base_date for days_before calculation
         if self.mode == self.MODE_TRAIN and self.end_date:
-            # 訓練データの場合は end_date を基準日として使用
+            # For training data, use end_date as the base date
             base_date_str = self.end_date.strftime('%Y-%m-%d')
             days_before_expr = f"CASE WHEN se.kaisai_date IS NOT NULL THEN DATE '{base_date_str}' - se.kaisai_date ELSE NULL END"
             logger.info(f"トレーニングモード: days_before の基準日を {base_date_str} に設定します")
         else:
-            # 評価/推論モードの場合は常に0
+            # For evaluation/inference mode, always use 0
             days_before_expr = "0"
             logger.info(f"評価/推論モード: days_before を常に 0 に設定します")
-            
-        # days_before特徴量を追加
-        feature_definitions['days_before'] = days_before_expr
         
-        # すべての特徴量をクエリに追加
-        for feature_name, expression in feature_definitions.items():
-            builder.select_as(expression, feature_name)
+        # SQLBuilderでクエリを構築
+        builder = SQLBuilder("se")
         
-        # 必要なJOINを追加（改行なしの1行に変更）
+        # 競走IDのためのカラムを追加
+        builder.select_as("se.kaisai_date", "kaisai_date")
+        builder.select_as("se.keibajo_code", "keibajo_code")
+        builder.select_as("se.kaisai_kai", "kaisai_kai")
+        builder.select_as("se.kaisai_nichime", "kaisai_nichime")
+        builder.select_as("se.kyoso_bango", "kyoso_bango")
+        
+        # 数値特徴量を追加
+        builder.select_as("CASE WHEN se.wakuban != 0 THEN se.wakuban ELSE NULL END", "wakuban")
+        builder.select_as("CASE WHEN se.umaban != 0 THEN se.umaban ELSE NULL END", "umaban")
+        builder.select_as("CASE WHEN se.futan_juryo != 0 THEN se.futan_juryo ELSE NULL END", "futan_juryo")
+        builder.select_as("CASE WHEN se.bataiju BETWEEN 2 AND 998 THEN se.bataiju ELSE NULL END", "bataiju")
+        builder.select_as("CASE WHEN se.zogensa BETWEEN -998 AND 998 THEN se.zogensa ELSE NULL END", "zogensa")
+        builder.select_as("CASE WHEN ra.kyori != 0 THEN ra.kyori ELSE NULL END", "kyori")
+        builder.select_as(days_before_expr, "days_before")
+        builder.select_as("CASE WHEN ks.birth_date IS NOT NULL THEN EXTRACT(YEAR FROM AGE(se.kaisai_date, ks.birth_date)) ELSE NULL END", "kishu_age")
+        builder.select_as("CASE WHEN um.birth_date IS NOT NULL THEN EXTRACT(YEAR FROM AGE(se.kaisai_date, um.birth_date)) ELSE NULL END", "uma_age")
+        
+        # カテゴリ特徴量を追加
+        builder.select_as("CASE WHEN se.ketto_toroku_bango != 0 THEN se.ketto_toroku_bango ELSE NULL END", "ketto_toroku_bango")
+        builder.select_as("se.blinker_shiyo_kubun", "blinker_shiyo_kubun")
+        builder.select_as("CASE WHEN se.kishu_code != 0 THEN se.kishu_code ELSE NULL END", "kishu_code")
+        builder.select_as("se.kishu_minarai_code", "kishu_minarai_code")
+        builder.select_as("CASE WHEN ra.track_code != '0' THEN ra.track_code ELSE NULL END", "track_code")
+        builder.select_as("CASE WHEN ra.course_kubun != '0' THEN ra.course_kubun ELSE NULL END", "course_kubun")
+        builder.select_as("CASE WHEN ra.tenko_code != '0' THEN ra.tenko_code ELSE NULL END", "tenko_code")
+        builder.select_as("CASE WHEN ra.babajotai_code != '0' THEN ra.babajotai_code ELSE NULL END", "babajotai_code")
+        builder.select_as("CASE WHEN um.chokyoshi_code != 0 THEN um.chokyoshi_code ELSE NULL END", "chokyoshi_code")
+        builder.select_as("CASE WHEN ks.seibetsu_kubun != '0' AND ks.seibetsu_kubun IS NOT NULL THEN ks.seibetsu_kubun ELSE NULL END", "kishu_seibetsu")
+        builder.select_as("CASE WHEN um.seibetsu_code != '0' AND um.seibetsu_code IS NOT NULL THEN um.seibetsu_code ELSE NULL END", "uma_seibetsu")
+        
+        # 3代血統情報を追加（条件に基づいて処理）
+        # 各血統登録番号について、該当するhnテーブルのketto_toroku_bangoが存在し0でない場合はそれを使用
+        for i in range(1, 15):
+            idx_str = f"{i:02d}"
+            builder.select_as(
+                f"CASE "
+                f"WHEN hn{idx_str}.ketto_toroku_bango IS NOT NULL AND hn{idx_str}.ketto_toroku_bango != 0 THEN hn{idx_str}.ketto_toroku_bango "
+                f"WHEN um.hanshoku_toroku_bango_{idx_str} != 0 THEN um.hanshoku_toroku_bango_{idx_str} "
+                f"ELSE NULL END", 
+                f"hanshoku_toroku_bango_{idx_str}"
+            )
+        
+        # ターゲット変数を追加
+        builder.select_as("CASE WHEN se.kakutei_chakujun != 0 THEN se.kakutei_chakujun ELSE NULL END", "kakutei_chakujun")
+        
+        # 必要なJOINを追加
         builder.join('LEFT JOIN ra ON se.kaisai_date = ra.kaisai_date AND se.keibajo_code = ra.keibajo_code AND se.kaisai_kai = ra.kaisai_kai AND se.kaisai_nichime = ra.kaisai_nichime AND se.kyoso_bango = ra.kyoso_bango')
+        builder.join('LEFT JOIN um ON se.ketto_toroku_bango = um.ketto_toroku_bango')
+        builder.join('LEFT JOIN ks ON se.kishu_code = ks.kishu_code')
+        
+        # 血統情報のためのJOINを追加
+        for i in range(1, 15):
+            idx_str = f"{i:02d}"
+            builder.join(f'LEFT JOIN hn hn{idx_str} ON um.hanshoku_toroku_bango_{idx_str} = hn{idx_str}.hanshoku_toroku_bango')
         
         # データフィルタ条件を追加
         builder.where("se.data_type IN ('7', '2')")
-        
-        # 異常区分コードが'1','2','3','4','5'の行を除外
         builder.where("(se.ijo_kubun_code IS NULL OR se.ijo_kubun_code NOT IN ('1', '2', '3', '4', '5'))")
         
         # 推論モードではなく、訓練・評価モードのときだけ着順フィルタを適用
         if self.mode != self.MODE_INFERENCE:
-            builder.where("se.kakutei_chakujun IS NOT NULL")  # 確定着順がある馬のみ
-            builder.where("se.kakutei_chakujun != 0")  # 着順が0でないもの
+            builder.where("(se.kakutei_chakujun IS NOT NULL AND se.kakutei_chakujun != 0)")  # 確定着順がある馬のみ
         
         # 日付範囲のフィルタ
         if start_date_str or end_date_str:
@@ -160,9 +157,12 @@ class TrifectaDataset(BaseDataset):
         # 競走IDごとにデータをグループ化
         kyoso_groups = defaultdict(list)
         
+        # 競走IDを構成するカラムをクエリから取得
+        kyoso_id_columns = ['kaisai_date', 'keibajo_code', 'kaisai_kai', 'kaisai_nichime', 'kyoso_bango']
+        
         for row in query_results:
             # 競走IDを生成
-            kyoso_id_parts = [str(row[col]) for col in self.KYOSO_ID_COLUMNS]
+            kyoso_id_parts = [str(row[col]) for col in kyoso_id_columns]
             kyoso_id = '_'.join(kyoso_id_parts)
             kyoso_groups[kyoso_id].append(row)
         
@@ -175,8 +175,8 @@ class TrifectaDataset(BaseDataset):
         feature_arrays = defaultdict(list)
         horse_counts = []  # 各レースの実際の出走馬数を保存
         
-        # 事前定義された特徴量名リストを使用
-        features = list(self.FEATURE_DEFINITIONS.keys())
+        # 特徴量名一覧をクエリ結果から取得
+        features = list(query_results[0].keys()) if query_results else []
         
         # 各競走のデータを処理
         for kyoso_id, horses in kyoso_groups.items():

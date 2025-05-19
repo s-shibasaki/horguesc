@@ -61,7 +61,43 @@ bool DataLoader::ExecuteSetup() {
 }
 
 bool DataLoader::ExecuteUpdate() {
-	return true;
+    if (!Initialize()) {
+        Console::WriteLine("Initialization failed.");
+        return false;
+    }
+
+    // Get the last timestamp from the database
+    Console::Write("Getting last timestamp from database: ");
+    String^ lastFromDate = nullptr;
+    try {
+        NpgsqlCommand^ command = gcnew NpgsqlCommand(
+            "SELECT timestamp FROM last_file_timestamp WHERE id = 1", 
+            connection);
+        Object^ result = command->ExecuteScalar();
+        
+        if (result != nullptr && result != DBNull::Value) {
+            lastFromDate = result->ToString();
+            Console::WriteLine("OK. Last timestamp: {0}", lastFromDate);
+        } else {
+            Console::WriteLine("failed.");
+            Console::WriteLine("No timestamp found in database. Please run setup first.");
+            Console::WriteLine("Run the program with 'setup' argument to initialize the database.");
+            return false;
+        }
+    } catch (Exception^ ex) {
+        Console::WriteLine("failed. {0}", ex->Message);
+        Console::WriteLine("No timestamp found in database. Please run setup first.");
+        Console::WriteLine("Run the program with 'setup' argument to initialize the database.");
+        return false;
+    }
+
+    JVOpenParams^ lastParams = gcnew JVOpenParams("RACEBLDNSNPNSLOPWOODYSCHMINGTOKUDIFNHOSNHOYUCOMM", lastFromDate, 1);
+    if (!ProcessChunk(lastParams)) {
+        Console::WriteLine("Error occured during data loading process.");
+        return false;
+    }
+
+    return true;
 }
 
 bool DataLoader::ExecuteRealtime() {
@@ -69,166 +105,188 @@ bool DataLoader::ExecuteRealtime() {
 }
 
 
-bool DataLoader::InitializeDatabase() {
-	try {
-		Console::Write("Connecting to postgres: ");
-		String^ connectionString = String::Format("Host={0};Port={1};Database=postgres;Username={2};Password={3};", config->DbHost, config->DbPort, config->DbUsername, config->DbPassword);
-		NpgsqlConnection^ connection = gcnew NpgsqlConnection(connectionString);
-		connection->Open();
-		Console::WriteLine("OK.");
+bool DataLoader::InitializeDatabase(bool deleteIfExists) {
+    try {
+        Console::Write("Connecting to postgres: ");
+        String^ connectionString = String::Format("Host={0};Port={1};Database=postgres;Username={2};Password={3};", config->DbHost, config->DbPort, config->DbUsername, config->DbPassword);
+        NpgsqlConnection^ connection = gcnew NpgsqlConnection(connectionString);
+        connection->Open();
+        Console::WriteLine("OK.");
 
-		// 共有する変数
-		NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
-		Object^ result;
+        // 共有する変数
+        NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
+        Object^ result;
 
-		Console::Write("Checking if database exists: ");
-		command->CommandText = "SELECT 1 FROM pg_database WHERE datname = @dbname";
-		command->Parameters->Clear();
-		command->Parameters->AddWithValue("@dbname", config->DbName);
-		result = command->ExecuteScalar();
+        Console::Write("Checking if database exists: ");
+        command->CommandText = "SELECT 1 FROM pg_database WHERE datname = @dbname";
+        command->Parameters->Clear();
+        command->Parameters->AddWithValue("@dbname", config->DbName);
+        result = command->ExecuteScalar();
 
-		if (result != nullptr) {
-			// データベースが存在した
-			Console::WriteLine("exists.");
+        if (result != nullptr) {
+            // データベースが存在した
+            Console::WriteLine("exists.");
 
-			// データベースを削除しない場合、このまま抜ける
-			if (!config->DeleteDatabase)
-				return true;
+            // データベースを削除しない場合、このまま抜ける
+            if (!deleteIfExists)
+                return true;
 
-			// 削除する場合
-			Console::Write("Deleting database: ");
-			command->CommandText = String::Format("DROP DATABASE \"{0}\"", config->DbName);
-			command->Parameters->Clear();
-			command->ExecuteNonQuery();
-			Console::WriteLine("OK.");
-		}
-		else {
-			// データベースが存在しなかった
-			Console::WriteLine("does not exists.");
-		}
+            // 削除する場合
+            Console::Write("Deleting database: ");
+            command->CommandText = String::Format("DROP DATABASE \"{0}\"", config->DbName);
+            command->Parameters->Clear();
+            command->ExecuteNonQuery();
+            Console::WriteLine("OK.");
+        }
+        else {
+            // データベースが存在しなかった
+            Console::WriteLine("does not exists.");
+        }
 
-		// データベース削除後、または存在しなかった場合
-		Console::Write("Creating new database: ");
-		command->CommandText = String::Format("CREATE DATABASE \"{0}\"", config->DbName);
-		command->Parameters->Clear();
-		command->ExecuteNonQuery();
-		Console::WriteLine("OK.");
-		return true;
-	}
-	catch (Exception^ ex) {
-		Console::WriteLine("failed. {0}", ex->Message);
-		return false;
-	}
+        // データベース削除後、または存在しなかった場合
+        Console::Write("Creating new database: ");
+        command->CommandText = String::Format("CREATE DATABASE \"{0}\"", config->DbName);
+        command->Parameters->Clear();
+        command->ExecuteNonQuery();
+        Console::WriteLine("OK.");
+        return true;
+    }
+    catch (Exception^ ex) {
+        Console::WriteLine("failed. {0}", ex->Message);
+        return false;
+    }
 }
 
 bool DataLoader::Initialize() {
-	config = gcnew Config();
-	config->Load();
+    config = gcnew Config();
+    config->Load();
 
-	if (!InitializeDatabase()) {
-		Console::WriteLine("Database initialization failed.");
-		return false;
-	}
+    // Only allow database deletion in setup mode
+    bool shouldDeleteDatabase = config->DeleteDatabase && (args->Length > 0 && args[0] == "setup");
+    
+    if (!InitializeDatabase(shouldDeleteDatabase)) {
+        Console::WriteLine("Database initialization failed.");
+        return false;
+    }
 
-	Console::Write("Opening database connection: ");
-	try {
-		String^ connectionString = String::Format("Host={0};Port={1};Database={2};Username={3};Password={4};", config->DbHost, config->DbPort, config->DbName, config->DbUsername, config->DbPassword);
-		connection = gcnew NpgsqlConnection(connectionString);
-		connection->Open();
-	}
-	catch (Exception^ ex) {
-		Console::WriteLine("failed. {0}", ex->Message);
-		return false;
-	}
-	Console::WriteLine("OK.");
+    Console::Write("Opening database connection: ");
+    try {
+        String^ connectionString = String::Format("Host={0};Port={1};Database={2};Username={3};Password={4};", config->DbHost, config->DbPort, config->DbName, config->DbUsername, config->DbPassword);
+        connection = gcnew NpgsqlConnection(connectionString);
+        connection->Open();
+    }
+    catch (Exception^ ex) {
+        Console::WriteLine("failed. {0}", ex->Message);
+        return false;
+    }
+    Console::WriteLine("OK.");
 
-	recordProcessor = gcnew RecordProcessor(connection);
-	if (!recordProcessor->Initialize()) {
-		Console::WriteLine("Failed to initialize Record Processor.");
-		return false;
-	}
+    // Create timestamp table in the database
+    if (!CreateTimestampTable()) {
+        Console::WriteLine("Failed to create timestamp table.");
+        return false;
+    }
 
-	Console::Write("JVLink Initialization: ");
-	int jvInitReturnCode = jvlink->JVInit(config->Sid);
-	if (jvInitReturnCode != 0) {
-		Console::WriteLine("failed. Error code: {0}", jvInitReturnCode);
-		return false;
-	}
-	Console::WriteLine("OK.");
+    recordProcessor = gcnew RecordProcessor(connection);
+    if (!recordProcessor->Initialize()) {
+        Console::WriteLine("Failed to initialize Record Processor.");
+        return false;
+    }
 
-	return true;
+    Console::Write("JVLink Initialization: ");
+    int jvInitReturnCode = jvlink->JVInit(config->Sid);
+    if (jvInitReturnCode != 0) {
+        Console::WriteLine("failed. Error code: {0}", jvInitReturnCode);
+        return false;
+    }
+    Console::WriteLine("OK.");
+
+    return true;
 }
 
 bool DataLoader::ProcessChunk(JVOpenParams^ params) {
-	int readCount;
-	int downloadCount;
-	String^ lastFileTimestamp;
+    int readCount;
+    int downloadCount;
+    String^ lastFileTimestamp;
 
-	Console::Write("JVOpen: ");
-	int jvOpenReturnCode = jvlink->JVOpen(params->dataSpec, params->fromDate, params->option, readCount, downloadCount, lastFileTimestamp);
-	if (jvOpenReturnCode != 0) {
-		Console::WriteLine("failed. Error code: {0}", jvOpenReturnCode);
-		return false;
-	}
-	Console::WriteLine("OK. readCount={0}, downloadCount={1}, lastFileTimestamp={2}", readCount, downloadCount, lastFileTimestamp);
+    Console::Write("JVOpen: ");
+    int jvOpenReturnCode = jvlink->JVOpen(params->dataSpec, params->fromDate, params->option, readCount, downloadCount, lastFileTimestamp);
+    if (jvOpenReturnCode == -1) {
+        Console::WriteLine("No matching data found.");
+        return true; // No data is not an error, so return success
+    }
+    else if (jvOpenReturnCode != 0) {
+        Console::WriteLine("failed. Error code: {0}", jvOpenReturnCode);
+        return false;
+    }
+    Console::WriteLine("OK. readCount={0}, downloadCount={1}, lastFileTimestamp={2}", readCount, downloadCount, lastFileTimestamp);
 
-	int downloadErrorCode = WaitForDownloadCompletion(downloadCount);
-	if (downloadErrorCode != 0) {
-		Console::WriteLine("Error occurred during file download. Error code: {0}", downloadErrorCode);
-		return false;
-	}
+    int downloadErrorCode = WaitForDownloadCompletion(downloadCount);
+    if (downloadErrorCode != 0) {
+        Console::WriteLine("Error occurred during file download. Error code: {0}", downloadErrorCode);
+        return false;
+    }
 
 
-	ProgressBar^ jvGetsProgressBar = gcnew ProgressBar(readCount, 50, "Reading files");
-	try {
-		int jvReadReturnCode;
-		while (true) {
-			String^ fileName;
-			int size = 110000;
-			String^ buffer;
-			jvReadReturnCode = jvlink->JVRead(buffer, size, fileName);
+    ProgressBar^ jvGetsProgressBar = gcnew ProgressBar(readCount, 50, "Reading files");
+    try {
+        int jvReadReturnCode;
+        while (true) {
+            String^ fileName;
+            int size = 110000;
+            String^ buffer;
+            jvReadReturnCode = jvlink->JVRead(buffer, size, fileName);
 
-			if (jvReadReturnCode < -1) {
-				Console::WriteLine();
-				Console::WriteLine("Error occured during data read. Error code: {0}", jvReadReturnCode);
-				return false;
-			}
-			else if (jvReadReturnCode == -1) {
-				jvGetsProgressBar->Increment();
-				continue;
-			}
-			else if (jvReadReturnCode == 0) {
-				jvGetsProgressBar->Increment();
-				Console::WriteLine();
-				break;
-			}
+            if (jvReadReturnCode < -1) {
+                Console::WriteLine();
+                Console::WriteLine("Error occured during data read. Error code: {0}", jvReadReturnCode);
+                return false;
+            }
+            else if (jvReadReturnCode == -1) {
+                jvGetsProgressBar->Increment();
+                continue;
+            }
+            else if (jvReadReturnCode == 0) {
+                jvGetsProgressBar->Increment();
+                Console::WriteLine();
+                break;
+            }
 
-			// Convert the string to CP932 byte array
-			array<Byte>^ bytes = System::Text::Encoding::GetEncoding(932)->GetBytes(buffer);
+            // Convert the string to CP932 byte array
+            array<Byte>^ bytes = System::Text::Encoding::GetEncoding(932)->GetBytes(buffer);
 
-			// Process the record
-			int processResult = recordProcessor->ProcessRecord(bytes);
+            // Process the record
+            int processResult = recordProcessor->ProcessRecord(bytes);
 
-			if (processResult == RecordProcessor::PROCESS_ERROR) {
-				// RecordProcessorで改行済み
-				Console::WriteLine("Error occured during process record.");
-				return false;
-			}
-			else if (processResult == RecordProcessor::PROCESS_SKIP) {
-				jvlink->JVSkip();
-				jvGetsProgressBar->Increment();
-			}
-		}
-	}
-	catch (Exception^ ex) {
-		Console::WriteLine();
-		Console::WriteLine("Error occured during data read: {0}", ex->Message);
-		return false;
-	}
+            if (processResult == RecordProcessor::PROCESS_ERROR) {
+                // RecordProcessorで改行済み
+                Console::WriteLine("Error occured during process record.");
+                return false;
+            }
+            else if (processResult == RecordProcessor::PROCESS_SKIP) {
+                jvlink->JVSkip();
+                jvGetsProgressBar->Increment();
+            }
+        }
+    }
+    catch (Exception^ ex) {
+        Console::WriteLine();
+        Console::WriteLine("Error occured during data read: {0}", ex->Message);
+        return false;
+    }
 
-	jvlink->JVClose();
+    jvlink->JVClose();
 
-	return true;
+    // Save the lastFileTimestamp to the database after all data is processed
+    Console::Write("Updating last file timestamp: ");
+    if (UpdateLastFileTimestamp(lastFileTimestamp)) {
+        Console::WriteLine("OK.");
+    } else {
+        Console::WriteLine("Failed.");
+        // Not returning false here since this is not a critical failure
+    }
+
+    return true;
 }
 
 int DataLoader::WaitForDownloadCompletion(int downloadCount) {
@@ -261,4 +319,48 @@ bool DataLoader::RollbackTransaction(NpgsqlTransaction^ transaction) {
 		}
 	}
 	return true;
+}
+
+bool DataLoader::CreateTimestampTable() {
+    try {
+        Console::Write("Creating timestamp table: ");
+        NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
+        
+        command->CommandText =
+            "CREATE TABLE IF NOT EXISTS last_file_timestamp ("
+            "id SMALLINT PRIMARY KEY DEFAULT 1, "
+            "timestamp VARCHAR(255) NOT NULL, "
+            "updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+            "CONSTRAINT single_row CHECK (id = 1))";
+        command->ExecuteNonQuery();
+        
+        Console::WriteLine("OK.");
+        return true;
+    }
+    catch (Exception^ ex) {
+        Console::WriteLine("failed. {0}", ex->Message);
+        return false;
+    }
+}
+
+bool DataLoader::UpdateLastFileTimestamp(System::String^ timestamp) {
+    try {
+        NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
+        
+        // Use upsert (INSERT ... ON CONFLICT) to handle both insert and update cases
+        command->CommandText = 
+            "INSERT INTO last_file_timestamp (id, timestamp, updated_at) "
+            "VALUES (1, @timestamp, CURRENT_TIMESTAMP) "
+            "ON CONFLICT (id) DO UPDATE "
+            "SET timestamp = @timestamp, updated_at = CURRENT_TIMESTAMP";
+        
+        command->Parameters->AddWithValue("@timestamp", timestamp);
+        command->ExecuteNonQuery();
+        
+        return true;
+    }
+    catch (Exception^ ex) {
+        Console::WriteLine("Failed to update last file timestamp: {0}", ex->Message);
+        return false;
+    }
 }

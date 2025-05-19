@@ -25,6 +25,16 @@ int RecordProcessor::ProcessRARecord(array<Byte>^ record) {
 		command->Parameters->AddWithValue("@course_kubun", ByteSubstring(record, 709, 2));
 		command->Parameters->AddWithValue("@tenko_code", ByteSubstring(record, 887, 1));
 
+		// Add hasso_time parameter from bytes 873-876 (HHmm format)
+		String^ hassoTimeStr = ByteSubstring(record, 873, 4);
+		if (!String::IsNullOrEmpty(hassoTimeStr) && hassoTimeStr != "0000") {
+			TimeSpan hassoTime = TimeSpan(Int32::Parse(hassoTimeStr->Substring(0, 2)), 
+										Int32::Parse(hassoTimeStr->Substring(2, 2)), 0);
+			command->Parameters->AddWithValue("@hasso_time", hassoTime);
+		} else {
+			command->Parameters->AddWithValue("@hasso_time", DBNull::Value);
+		}
+
 		Int16 trackCodeInt = Int16::Parse(trackCode);
 		String^ babajotaiCode = "0";
 		if ((10 <= trackCodeInt && trackCodeInt <= 22) || trackCodeInt == 51 || (53 <= trackCodeInt && trackCodeInt <= 59))
@@ -44,12 +54,13 @@ int RecordProcessor::ProcessRARecord(array<Byte>^ record) {
 
 		// 既存のレコードがない場合は挿入して終了
 		if (existingCreationDateObj == nullptr) {
+			// For INSERT statement
 			command->CommandText = "INSERT INTO ra (data_type, creation_date, "
 				"kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, "
-				"kyori, track_code, course_kubun, tenko_code, babajotai_code) "
+				"kyori, track_code, course_kubun, tenko_code, babajotai_code, hasso_time) "
 				"VALUES (@data_type, @creation_date, "
 				"@kaisai_date, @keibajo_code, @kaisai_kai, @kaisai_nichime, @kyoso_bango, "
-				"@kyori, @track_code, @course_kubun, @tenko_code, @babajotai_code)";
+				"@kyori, @track_code, @course_kubun, @tenko_code, @babajotai_code, @hasso_time)";
 			command->ExecuteNonQuery();
 			return PROCESS_SUCCESS;
 		}
@@ -62,6 +73,7 @@ int RecordProcessor::ProcessRARecord(array<Byte>^ record) {
 			return PROCESS_SUCCESS;
 
 		// 既存の日付が古いか同じ場合は更新して終了
+		// For UPDATE statement
 		command->CommandText = "UPDATE ra SET "
 			"data_type = @data_type, "
 			"creation_date = @creation_date, "
@@ -69,7 +81,8 @@ int RecordProcessor::ProcessRARecord(array<Byte>^ record) {
 			"track_code = @track_code, "
 			"course_kubun = @course_kubun, "
 			"tenko_code = @tenko_code, "
-			"babajotai_code = @babajotai_code "
+			"babajotai_code = @babajotai_code, "
+			"hasso_time = @hasso_time "
 			"WHERE kaisai_date = @kaisai_date "
 			"AND keibajo_code = @keibajo_code "
 			"AND kaisai_kai = @kaisai_kai "

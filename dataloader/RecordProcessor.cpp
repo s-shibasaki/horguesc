@@ -25,6 +25,7 @@ bool RecordProcessor::Initialize() {
 			"course_kubun CHAR(2), "
 			"tenko_code CHAR(1), "
 			"babajotai_code CHAR(1), "
+			"hasso_time TIME, "
 			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango))";
 		command->ExecuteNonQuery();
 

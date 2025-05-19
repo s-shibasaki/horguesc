@@ -101,7 +101,120 @@ bool DataLoader::ExecuteUpdate() {
 }
 
 bool DataLoader::ExecuteRealtime() {
-	return true;
+    if (!Initialize()) {
+        Console::WriteLine("Initialization failed.");
+        return false;
+    }
+
+    // Today's date in YYYYMMDD format
+    String^ today = DateTime::Now.ToString("yyyyMMdd");
+    
+    // Process date-based data specs first
+    array<String^>^ dateBasedDataSpecs = {"0B15", "0B11", "0B14", "0B13", "0B17", "0B51"};
+    for each (String^ dataSpec in dateBasedDataSpecs) {
+        if (!ProcessRealtimeChunk(dataSpec, today)) {
+            Console::WriteLine("Error occurred during realtime data processing for {0}.", dataSpec);
+            return false;
+        }
+    }
+    
+    // Now process race ID-based data specs (0B30, 0B20)
+    try {
+        // Get today's race IDs from the database
+        NpgsqlCommand^ command = gcnew NpgsqlCommand(
+            "SELECT CONCAT(TO_CHAR(kaisai_date, 'YYYYMMDD'), keibajo_code, LPAD(kaisai_kai::text, 2, '0'), " +
+            "LPAD(kaisai_nichime::text, 2, '0'), LPAD(kyoso_bango::text, 2, '0')) AS race_id " +
+            "FROM ra WHERE kaisai_date = @today::date", 
+            connection);
+        command->Parameters->AddWithValue("@today", today);
+        
+        NpgsqlDataReader^ reader = command->ExecuteReader();
+        
+        // Store the race IDs
+        System::Collections::Generic::List<String^>^ raceIds = gcnew System::Collections::Generic::List<String^>();
+        while (reader->Read()) {
+            raceIds->Add(reader["race_id"]->ToString());
+        }
+        reader->Close();
+        
+        // Process each race ID for the race-specific data specs
+        array<String^>^ raceBasedDataSpecs = {"0B30", "0B20"};
+        for each (String^ dataSpec in raceBasedDataSpecs) {
+            for each (String^ raceId in raceIds) {
+                if (!ProcessRealtimeChunk(dataSpec, raceId)) {
+                    Console::WriteLine("Error occurred during realtime data processing for {0} with race ID {1}.", dataSpec, raceId);
+                    return false;
+                }
+            }
+        }
+    }
+    catch (Exception^ ex) {
+        Console::WriteLine("Error getting race IDs: {0}", ex->Message);
+        return false;
+    }
+    
+    return true;
+}
+
+bool DataLoader::ProcessRealtimeChunk(String^ dataSpec, String^ key) {
+    // Determine if we're using a date or race ID based on the key length
+    bool isRaceId = (key->Length > 8);
+    String^ keyType = isRaceId ? "race ID" : "date";
+    
+    Console::Write("JVRTOpen for {0} with {1} {2}: ", dataSpec, keyType, key);
+    int jvRTOpenReturnCode = jvlink->JVRTOpen(dataSpec, key);
+    
+    if (jvRTOpenReturnCode == -1) {
+        Console::WriteLine("No matching data found.");
+        return true; // No data is not an error, so return success
+    }
+    else if (jvRTOpenReturnCode != 0) {
+        Console::WriteLine("failed. Error code: {0}", jvRTOpenReturnCode);
+        return false;
+    }
+    Console::WriteLine("OK.");
+    
+    try {
+        int jvReadReturnCode;
+        while (true) {
+            String^ fileName;
+            int size = 110000;
+            String^ buffer;
+            jvReadReturnCode = jvlink->JVRead(buffer, size, fileName);
+            
+            if (jvReadReturnCode < -1) {
+                Console::WriteLine("Error occurred during data read. Error code: {0}", jvReadReturnCode);
+                return false;
+            }
+            else if (jvReadReturnCode == -1) {
+                continue;
+            }
+            else if (jvReadReturnCode == 0) {
+                break;
+            }
+            
+            // Convert the string to CP932 byte array
+            array<Byte>^ bytes = System::Text::Encoding::GetEncoding(932)->GetBytes(buffer);
+            
+            // Process the record
+            int processResult = recordProcessor->ProcessRecord(bytes);
+            
+            if (processResult == RecordProcessor::PROCESS_ERROR) {
+                Console::WriteLine("Error occurred during process record.");
+                return false;
+            }
+            else if (processResult == RecordProcessor::PROCESS_SKIP) {
+                jvlink->JVSkip();
+            }
+        }
+    }
+    catch (Exception^ ex) {
+        Console::WriteLine("Error occurred during data read: {0}", ex->Message);
+        return false;
+    }
+    
+    jvlink->JVClose();
+    return true;
 }
 
 

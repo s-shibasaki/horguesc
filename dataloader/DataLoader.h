@@ -19,6 +19,7 @@ private:
     RecordProcessor^ recordProcessor;
     bool Initialize();
     bool ProcessChunk(JVOpenParams^);
+    bool ProcessRealtimeChunk(System::String^ dataSpec, System::String^ date);
     int WaitForDownloadCompletion(int downloadCount);
     bool InitializeDatabase(bool deleteIfExists);
     bool CreateTimestampTable();

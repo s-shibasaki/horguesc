@@ -190,7 +190,8 @@ class Config(configparser.ConfigParser):
             ('training', 'train_start_date'),
             ('training', 'train_end_date'),
             ('training', 'val_start_date'),
-            ('training', 'val_end_date')
+            ('training', 'val_end_date'),
+            ('features', 'base_date')  # 基準日を追加
         ]
         
         invalid_dates = []

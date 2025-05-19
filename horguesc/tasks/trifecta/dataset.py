@@ -1,7 +1,7 @@
 from horguesc.core.base.dataset import BaseDataset
 import logging
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 from horguesc.database.sql_builder import SQLBuilder
 import itertools
@@ -13,48 +13,51 @@ logger = logging.getLogger(__name__)
 class TrifectaDataset(BaseDataset):
     """Trifectaタスク向けのデータセットクラス。"""
     
-    # クラス変数として特徴量定義を追加（簡略化版）
-    FEATURE_DEFINITIONS = {
-        # 競走ID用のカラム
-        'kaisai_date': 'se.kaisai_date',
-        'keibajo_code': 'se.keibajo_code',
-        'kaisai_kai': 'se.kaisai_kai',
-        'kaisai_nichime': 'se.kaisai_nichime',
-        'kyoso_bango': 'se.kyoso_bango',
-        
-        # 特徴量
-        'umaban': 'se.umaban',
-        'bataiju': 'CASE WHEN se.bataiju BETWEEN 2 AND 998 THEN se.bataiju ELSE NULL END',
-        'ketto_toroku_bango': 'CASE WHEN se.ketto_toroku_bango != 0 THEN se.ketto_toroku_bango ELSE NULL END',
-        'futan_juryo': 'se.futan_juryo',
-        'blinker_shiyo_kubun': 'se.blinker_shiyo_kubun',
-        'kishu_code': 'se.kishu_code',
-        'kishu_minarai_code': 'se.kishu_minarai_code',
-        
-        # RAテーブルの関連特徴量
-        'kyori': 'ra.kyori',
-        'track_code': 'ra.track_code',
-        'course_kubun': 'ra.course_kubun',
-        'tenko_code': 'ra.tenko_code',
-        'babajotai_code': 'ra.babajotai_code',
-        
-        # ターゲット変数
-        'kakutei_chakujun': 'se.kakutei_chakujun',
-    }
-    
-    # 競走IDを構成するカラム定義（FEATURE_DEFINITIONSのキーを使用）
-    KYOSO_ID_COLUMNS = [
-        'kaisai_date',
-        'keibajo_code', 
-        'kaisai_kai', 
-        'kaisai_nichime', 
-        'kyoso_bango'
-    ]
-    
     def __init__(self, *args, **kwargs):
         """TrifectaDatasetの初期化"""
         super().__init__(*args, **kwargs)
-    
+        
+        # 特徴量定義を__init__内に移動（簡略化版）
+        self.FEATURE_DEFINITIONS = {
+            # 競走ID用のカラム
+            'kaisai_date': 'se.kaisai_date',
+            'keibajo_code': 'se.keibajo_code',
+            'kaisai_kai': 'se.kaisai_kai',
+            'kaisai_nichime': 'se.kaisai_nichime',
+            'kyoso_bango': 'se.kyoso_bango',
+            
+            # 数値特徴量
+            'wakuban': 'CASE WHEN se.wakuban != 0 THEN se.wakuban ELSE NULL END',
+            'umaban': 'CASE WHEN se.umaban != 0 THEN se.umaban ELSE NULL END',
+            'futan_juryo': 'CASE WHEN se.futan_juryo != 0 THEN se.futan_juryo ELSE NULL END',
+            'bataiju': 'CASE WHEN se.bataiju BETWEEN 2 AND 998 THEN se.bataiju ELSE NULL END',
+            'zogensa': 'CASE WHEN se.zogensa BETWEEN -998 AND 998 THEN se.zogensa ELSE NULL END',
+            'kyori': 'CASE WHEN ra.kyori != 0 THEN ra.kyori ELSE NULL END',
+            # days_beforeはSQL生成時に追加するので、ここでは定義しない
+            
+            # カテゴリ特徴量
+            'ketto_toroku_bango': 'CASE WHEN se.ketto_toroku_bango != 0 THEN se.ketto_toroku_bango ELSE NULL END',
+            'blinker_shiyo_kubun': 'se.blinker_shiyo_kubun',
+            'kishu_code': 'CASE WHEN se.kishu_code != 0 THEN se.kishu_code ELSE NULL END',
+            'kishu_minarai_code': 'se.kishu_minarai_code',
+            'track_code': 'CASE WHEN ra.track_code != \'0\' THEN ra.track_code ELSE NULL END',
+            'course_kubun': 'CASE WHEN ra.course_kubun != \'0\' THEN ra.course_kubun ELSE NULL END',
+            'tenko_code': 'CASE WHEN ra.tenko_code != \'0\' THEN ra.tenko_code ELSE NULL END',
+            'babajotai_code': 'CASE WHEN ra.babajotai_code != \'0\' THEN ra.babajotai_code ELSE NULL END',
+            
+            # ターゲット変数
+            'kakutei_chakujun': 'CASE WHEN se.kakutei_chakujun != 0 THEN se.kakutei_chakujun ELSE NULL END',
+        }
+        
+        # 競走IDを構成するカラム定義も__init__内に移動
+        self.KYOSO_ID_COLUMNS = [
+            'kaisai_date',
+            'keibajo_code', 
+            'kaisai_kai', 
+            'kaisai_nichime', 
+            'kyoso_bango'
+        ]
+        
     def _fetch_data(self, db_ops=None, **kwargs) -> None:
         """データベースからTrifectaデータを取得する"""
         logger.info(f"Trifectaデータの取得を開始: {self.start_date} から {self.end_date} まで")
@@ -72,20 +75,41 @@ class TrifectaDataset(BaseDataset):
         builder = SQLBuilder("se")
         
         # 全ての特徴量を選択（ID用カラムも含む）
-        for feature_name, expression in self.FEATURE_DEFINITIONS.items():
+        feature_definitions = self.FEATURE_DEFINITIONS.copy()
+        
+        # days_before特徴量の定義を作成
+        # - 訓練モードの場合: end_dateを基準日として使用
+        # - 評価/推論モードの場合: 常に0を設定（days_before = 0）
+        if self.mode == self.MODE_TRAIN and self.end_date:
+            # 訓練データの場合は end_date を基準日として使用
+            base_date_str = self.end_date.strftime('%Y-%m-%d')
+            days_before_expr = f"CASE WHEN se.kaisai_date IS NOT NULL THEN DATE '{base_date_str}' - se.kaisai_date ELSE NULL END"
+            logger.info(f"トレーニングモード: days_before の基準日を {base_date_str} に設定します")
+        else:
+            # 評価/推論モードの場合は常に0
+            days_before_expr = "0"
+            logger.info(f"評価/推論モード: days_before を常に 0 に設定します")
+            
+        # days_before特徴量を追加
+        feature_definitions['days_before'] = days_before_expr
+        
+        # すべての特徴量をクエリに追加
+        for feature_name, expression in feature_definitions.items():
             builder.select_as(expression, feature_name)
         
-        # 必要なJOINを追加
-        builder.join('''LEFT JOIN ra ON se.kaisai_date = ra.kaisai_date 
-                    AND se.keibajo_code = ra.keibajo_code 
-                    AND se.kaisai_kai = ra.kaisai_kai 
-                    AND se.kaisai_nichime = ra.kaisai_nichime 
-                    AND se.kyoso_bango = ra.kyoso_bango''')
+        # 必要なJOINを追加（改行なしの1行に変更）
+        builder.join('LEFT JOIN ra ON se.kaisai_date = ra.kaisai_date AND se.keibajo_code = ra.keibajo_code AND se.kaisai_kai = ra.kaisai_kai AND se.kaisai_nichime = ra.kaisai_nichime AND se.kyoso_bango = ra.kyoso_bango')
         
         # データフィルタ条件を追加
         builder.where("se.data_type IN ('7', '2')")
-        builder.where("se.kakutei_chakujun IS NOT NULL")  # 確定着順がある馬のみ
-        builder.where("se.kakutei_chakujun BETWEEN 1 AND 18")  # 着順が有効な範囲内のもの
+        
+        # 異常区分コードが'1','2','3','4','5'の行を除外
+        builder.where("(se.ijo_kubun_code IS NULL OR se.ijo_kubun_code NOT IN ('1', '2', '3', '4', '5'))")
+        
+        # 推論モードではなく、訓練・評価モードのときだけ着順フィルタを適用
+        if self.mode != self.MODE_INFERENCE:
+            builder.where("se.kakutei_chakujun IS NOT NULL")  # 確定着順がある馬のみ
+            builder.where("se.kakutei_chakujun != 0")  # 着順が0でないもの
         
         # 日付範囲のフィルタ
         if start_date_str or end_date_str:
@@ -112,11 +136,13 @@ class TrifectaDataset(BaseDataset):
             # クエリ結果を2D配列形式のデータに変換
             self.raw_data = self._convert_query_results_to_2d_arrays(results)
             
-            # 3連単のターゲットを作成
-            self._create_trifecta_targets()
-            
-            logger.info(f"Trifectaデータの取得完了: {len(self.raw_data['kyoso_id'])}競走、{len(results)}頭")
-            
+            # 推論モード以外の場合のみ、3連単のターゲットを作成
+            if self.mode != self.MODE_INFERENCE:
+                self._create_trifecta_targets()
+                logger.info(f"Trifectaデータの取得完了: {len(self.raw_data['kyoso_id'])}競走、{len(results)}頭")
+            else:
+                logger.info(f"推論用Trifectaデータの取得完了（ターゲットなし）: {len(self.raw_data['kyoso_id'])}競走、{len(results)}頭")
+        
         except Exception as e:
             logger.error(f"データ取得中にエラーが発生しました: {e}")
             raise
@@ -129,7 +155,7 @@ class TrifectaDataset(BaseDataset):
             query_results: SQLクエリの結果（辞書のリスト）
             
         Returns:
-            dict: kyoso_idリストと特徴量の2D配列を含む辞書
+            dict: kyoso_idリストと特徴量の2D配列を含む辞
         """
         # 競走IDごとにデータをグループ化
         kyoso_groups = defaultdict(list)
@@ -216,7 +242,7 @@ class TrifectaDataset(BaseDataset):
             # このレースの着順データを取得
             chakujun = self.raw_data['kakutei_chakujun'][race_idx]
             
-            # 実際の出走頭数（馬の数）
+            # 実際の出走馬数（馬の数）
             race_horse_count = int(horse_counts[race_idx])
             
             # NoneやNaNを大きな値に置き換えて、有効な馬だけを考慮

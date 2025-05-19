@@ -83,7 +83,7 @@ def main():
 
 def _add_common_arguments(parser):
     """Add common command line arguments to a parser."""
-    # Common configuration arguments
+    # 既存の引数
     parser.add_argument('--database.host', help='Database host')
     parser.add_argument('--database.port', type=int, help='Database port')
     parser.add_argument('--database.username', help='Database username')

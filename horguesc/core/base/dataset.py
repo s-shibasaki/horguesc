@@ -13,35 +13,16 @@ class BaseDataset(abc.ABC):
     このクラスはデータの取得から前処理、バッチ処理までのパイプラインを提供します。
     サブクラスでは主に _fetch_data メソッドを実装する必要があります。
     
-    特徴:
-    - ターゲット変数: 'target' または 'target_' で始まる名前のデータは自動的にバッチに含まれます
-    - 補助データ: 特徴量やターゲット以外のデータも自動的にバッチに含まれます
-    - データ型処理: テンソル/NumPy配列はインデックスでスライス、リストは要素抽出、その他はコピー
-    
-    使用例:
-    ```python
-    class MyDataset(BaseDataset):
-        def _fetch_data(self, *args, **kwargs):
-            # データ取得処理...
-            self.raw_data = {
-                # 特徴量 (必ずnumpy配列で、ini定義と名前が一致すること)
-                'numerical_feature': np.array(...),
-                'categorical_feature': np.array(...),
-                
-                # ターゲット (自動的にバッチに含まれる)
-                'target': np.array(...),
-                'target_auxiliary': np.array(...),
-                
-                # 補助データ (自動的にバッチに含まれる)
-                'race_id': [...],  # リストでもOK
-                'horse_names': [...],
-            }
-    ```
+    データセットのモード:
+    - train: 訓練用（過去データ、結果ありでシャッフル有り）
+    - eval: 評価用（過去データ、結果ありでシャッフル無し）
+    - inference: 推論用（未知データ、結果なしでシャッフル無し）
     """
     
     # データセットのモード定義
-    MODE_TRAIN = 'train'  # 訓練用（シャッフル有り）
-    MODE_EVAL = 'eval'    # 評価用（シャッフル無し）
+    MODE_TRAIN = 'train'        # 訓練用（過去データ、結果あり、シャッフル有り）
+    MODE_EVAL = 'eval'          # 評価用（過去データ、結果あり、シャッフル無し）
+    MODE_INFERENCE = 'inference'  # 推論用（未知データ、結果なし、シャッフル無し）
     
     def __init__(self, 
                  config: Any, 
@@ -56,7 +37,7 @@ class BaseDataset(abc.ABC):
         
         Args:
             config: アプリケーション設定
-            mode: データセットモード ('train' または 'eval')
+            mode: データセットモード ('train', 'eval', または 'inference')
             batch_size: バッチサイズ
             start_date: データの開始日 (日付文字列またはdatetime)
             end_date: データの終了日 (日付文字列またはdatetime)
@@ -65,7 +46,7 @@ class BaseDataset(abc.ABC):
         self.config = config
         
         # データセットモード
-        valid_modes = [self.MODE_TRAIN, self.MODE_EVAL]
+        valid_modes = [self.MODE_TRAIN, self.MODE_EVAL, self.MODE_INFERENCE]
         if mode not in valid_modes:
             raise ValueError(f"モードは {', '.join(valid_modes)} のいずれかである必要があります")
         self.mode = mode
@@ -150,9 +131,6 @@ class BaseDataset(abc.ABC):
         
         Returns:
             tuple: (バッチデータを含む辞書, 最後のバッチかどうかを示すブール値)
-            
-        Note:
-            最後のバッチに到達した後、訓練モードではデータが自動的にシャッフルされます。
         """
         # シーケンシャルなバッチ取得
         batch_data = self._get_batch_at_index(self.batch_size, self._next_batch_index)
@@ -165,11 +143,16 @@ class BaseDataset(abc.ABC):
         is_last_batch = self._next_batch_index >= total_batches
         
         if is_last_batch:
-            # 最後のバッチだった場合、次回のためにインデックスを初期化
+            # 最後のバッチだった場合の処理
             if self.mode == self.MODE_TRAIN:
+                # 訓練モードでは再シャッフル
                 logger.debug(f"{self.__class__.__name__} データセット: 最後のバッチに到達したため再シャッフルします")
-            self._init_batch_indices()  # インデックス初期化（シャッフルも含む）
-    
+                self._init_batch_indices()
+            elif self.mode == self.MODE_EVAL or self.mode == self.MODE_INFERENCE:
+                # 評価・推論モードではインデックスをリセットするだけ（シャッフルなし）
+                logger.debug(f"{self.__class__.__name__} データセット: 最後のバッチに到達したためインデックスをリセットします")
+                self._init_batch_indices(shuffle=False)
+
         return batch_data, is_last_batch
     
     # プロテクティッドメソッド - サブクラスでオーバーライド可能
@@ -314,14 +297,22 @@ class BaseDataset(abc.ABC):
         
         return processed
     
-    def _init_batch_indices(self) -> None:
-        """バッチ処理用のインデックス配列を初期化します。"""
+    def _init_batch_indices(self, shuffle=None) -> None:
+        """バッチ処理用のインデックス配列を初期化します。
+        
+        Args:
+            shuffle: シャッフルするかどうか。Noneの場合はモードに基づいて判定
+        """
         data_size = self._get_data_size()
         self._batch_indices = np.arange(data_size)
         self._next_batch_index = 0
         
-        # 訓練モードの場合はシャッフル
-        if self.mode == self.MODE_TRAIN:
+        # シャッフル判定
+        if shuffle is None:
+            # モードに基づいてシャッフル判定
+            shuffle = (self.mode == self.MODE_TRAIN)
+        
+        if shuffle:
             self._shuffle_indices()
     
     def _shuffle_indices(self) -> None:

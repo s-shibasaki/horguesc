@@ -170,13 +170,18 @@
     <ClCompile Include="Program.cpp" />
     <ClCompile Include="ProgressBar.cpp" />
     <ClCompile Include="RecordProcessor.cpp" />
+    <ClCompile Include="RecordProcessor_AV.cpp" />
+    <ClCompile Include="RecordProcessor_CC.cpp" />
     <ClCompile Include="RecordProcessor_CH.cpp" />
     <ClCompile Include="RecordProcessor_CS.cpp" />
     <ClCompile Include="RecordProcessor_HN.cpp" />
+    <ClCompile Include="RecordProcessor_JC.cpp" />
     <ClCompile Include="RecordProcessor_KS.cpp" />
     <ClCompile Include="RecordProcessor_RA.cpp" />
     <ClCompile Include="RecordProcessor_SE.cpp" />
+    <ClCompile Include="RecordProcessor_TC.cpp" />
     <ClCompile Include="RecordProcessor_UM.cpp" />
+    <ClCompile Include="RecordProcessor_WE.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Config.h" />

@@ -30,7 +30,7 @@ bool RecordProcessor::Initialize() {
 
 		command->CommandText =
 			"CREATE TABLE IF NOT EXISTS se ("
-			"data_type VARCHAR(1), "
+			"data_type CHAR(1), "
 			"creation_date DATE, "
 			"kaisai_date DATE, "
 			"keibajo_code CHAR(2), "
@@ -54,7 +54,7 @@ bool RecordProcessor::Initialize() {
 
 		command->CommandText =
 			"CREATE TABLE IF NOT EXISTS um ("
-			"data_type VARCHAR(1), "
+			"data_type CHAR(1), "
 			"creation_date DATE, "
 			"ketto_toroku_bango BIGINT, "
 			"birth_date DATE, "
@@ -68,7 +68,7 @@ bool RecordProcessor::Initialize() {
 
 		command->CommandText =
 			"CREATE TABLE IF NOT EXISTS hn ("
-			"data_type VARCHAR(1), "
+			"data_type CHAR(1), "
 			"creation_date DATE, "
 			"hanshoku_toroku_bango BIGINT, "
 			"ketto_toroku_bango BIGINT, "
@@ -77,7 +77,7 @@ bool RecordProcessor::Initialize() {
 
 		command->CommandText =
 			"CREATE TABLE IF NOT EXISTS ch ("
-			"data_type VARCHAR(1), "
+			"data_type CHAR(1), "
 			"creation_date DATE, "
 			"chokyoshi_code INT, "
 			"seibetsu_kubun CHAR(1), "
@@ -86,7 +86,7 @@ bool RecordProcessor::Initialize() {
 
 		command->CommandText =
 			"CREATE TABLE IF NOT EXISTS ks ("
-			"data_type VARCHAR(1), "
+			"data_type CHAR(1), "
 			"creation_date DATE, "
 			"kishu_code INT, "
 			"seibetsu_kubun CHAR(1), "
@@ -96,7 +96,7 @@ bool RecordProcessor::Initialize() {
 
 		command->CommandText =
 			"CREATE TABLE IF NOT EXISTS cs ("
-			"data_type VARCHAR(1), "
+			"data_type CHAR(1), "
 			"creation_date DATE, "
 			"keibajo_code CHAR(2), "
 			"kyori SMALLINT, "
@@ -105,6 +105,79 @@ bool RecordProcessor::Initialize() {
 			"description VARCHAR(6800), "
 			"PRIMARY KEY (keibajo_code, kyori, track_code, kaishu_date))";
 		command->ExecuteNonQuery();
+
+		command->CommandText = 
+			"CREATE TABLE IF NOT EXISTS we ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"happyo_datetime TIMESTAMP, "
+			"henko_shikibetsu CHAR(1), "
+			"tenko_code CHAR(1), "
+			"babajotai_code_shiba CHAR(1), "
+			"babajotai_code_dirt CHAR(1), "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, happyo_datetime, henko_shikibetsu))";
+		command->ExecuteNonQuery();
+
+		command->CommandText = 
+			"CREATE TABLE IF NOT EXISTS av ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"kyoso_bango SMALLINT, "
+			"umaban SMALLINT, "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, umaban))";
+		command->ExecuteNonQuery();
+
+		command->CommandText = 
+			"CREATE TABLE IF NOT EXISTS jc ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"kyoso_bango SMALLINT, "
+			"happyo_datetime TIMESTAMP, "
+			"umaban SMALLINT, "
+			"futan_juryo SMALLINT, "
+			"kishu_code INT, "
+			"kishu_minarai_code CHAR(1), "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, umaban))";
+		command->ExecuteNonQuery();
+
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS tc ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"kyoso_bango SMALLINT, "
+			"hasso_time TIME, "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango))";
+		command->ExecuteNonQuery();
+
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS cc ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"kyoso_bango SMALLINT, "
+			"kyori SMALLINT, "
+			"track_code CHAR(2), "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango))";
+		command->ExecuteNonQuery(); // この行を追加
 
 		return true;
 	}
@@ -132,6 +205,16 @@ int RecordProcessor::ProcessRecord(array<Byte>^ record) {
 			return ProcessKSRecord(record);
 		else if (recordTypeId == "CS")
 			return ProcessCSRecord(record);
+		else if (recordTypeId == "WE")
+			return ProcessWERecord(record);
+		else if (recordTypeId == "AV")
+			return ProcessAVRecord(record);
+		else if (recordTypeId == "JC")
+			return ProcessJCRecord(record);
+		else if (recordTypeId == "TC")
+			return ProcessTCRecord(record);
+		else if (recordTypeId == "CC")
+			return ProcessCCRecord(record);
 		else
 			return PROCESS_SKIP; // Unknown record type, skip it
 	}

@@ -10,6 +10,11 @@ private:
 	int ProcessCHRecord(array<System::Byte>^ record);
 	int ProcessKSRecord(array<System::Byte>^ record);
 	int ProcessCSRecord(array<System::Byte>^ record);
+	int ProcessWERecord(array<System::Byte>^ record);
+	int ProcessAVRecord(array<System::Byte>^ record);
+	int ProcessJCRecord(array<System::Byte>^ record);
+	int ProcessTCRecord(array<System::Byte>^ record);
+	int ProcessCCRecord(array<System::Byte>^ record);
 	System::String^ ByteSubstring(array<System::Byte>^ bytes, int byteStartIndex, int byteLength);
 
 public:

@@ -54,10 +54,43 @@ class TrifectaDataset(BaseDataset):
         # 数値特徴量を追加
         builder.select_as("CASE WHEN se.wakuban != 0 THEN se.wakuban ELSE NULL END", "wakuban")
         builder.select_as("CASE WHEN se.umaban != 0 THEN se.umaban ELSE NULL END", "umaban")
-        builder.select_as("CASE WHEN se.futan_juryo != 0 THEN se.futan_juryo ELSE NULL END", "futan_juryo")
+        builder.select_as("""
+            CASE 
+                WHEN se.data_type = '2' THEN 
+                    COALESCE(
+                        (SELECT jc.futan_juryo 
+                        FROM jc 
+                        WHERE jc.kaisai_date = se.kaisai_date
+                        AND jc.keibajo_code = se.keibajo_code
+                        AND jc.kaisai_kai = se.kaisai_kai
+                        AND jc.kaisai_nichime = se.kaisai_nichime
+                        AND jc.kyoso_bango = se.kyoso_bango
+                        AND jc.umaban = se.umaban
+                        ORDER BY jc.happyo_datetime DESC
+                        LIMIT 1),
+                        se.futan_juryo
+                    )
+                ELSE se.futan_juryo
+            END
+        """, "futan_juryo")
         builder.select_as("CASE WHEN se.bataiju BETWEEN 2 AND 998 THEN se.bataiju ELSE NULL END", "bataiju")
         builder.select_as("CASE WHEN se.zogensa BETWEEN -998 AND 998 THEN se.zogensa ELSE NULL END", "zogensa")
-        builder.select_as("CASE WHEN ra.kyori != 0 THEN ra.kyori ELSE NULL END", "kyori")
+        builder.select_as("""
+            CASE 
+                WHEN se.data_type = '2' THEN 
+                    COALESCE(
+                        (SELECT cc.kyori 
+                        FROM cc 
+                        WHERE cc.kaisai_date = se.kaisai_date
+                        AND cc.keibajo_code = se.keibajo_code
+                        AND cc.kaisai_kai = se.kaisai_kai
+                        AND cc.kaisai_nichime = se.kaisai_nichime
+                        AND cc.kyoso_bango = se.kyoso_bango),
+                        ra.kyori
+                    )
+                ELSE ra.kyori 
+            END
+        """, "kyori")
         builder.select_as(days_before_expr, "days_before")
         builder.select_as("CASE WHEN ks.birth_date IS NOT NULL THEN EXTRACT(YEAR FROM AGE(se.kaisai_date, ks.birth_date)) ELSE NULL END", "kishu_age")
         builder.select_as("CASE WHEN um.birth_date IS NOT NULL THEN EXTRACT(YEAR FROM AGE(se.kaisai_date, um.birth_date)) ELSE NULL END", "uma_age")
@@ -65,18 +98,118 @@ class TrifectaDataset(BaseDataset):
         # カテゴリ特徴量を追加
         builder.select_as("CASE WHEN se.ketto_toroku_bango != 0 THEN se.ketto_toroku_bango ELSE NULL END", "ketto_toroku_bango")
         builder.select_as("se.blinker_shiyo_kubun", "blinker_shiyo_kubun")
-        builder.select_as("CASE WHEN se.kishu_code != 0 THEN se.kishu_code ELSE NULL END", "kishu_code")
-        builder.select_as("se.kishu_minarai_code", "kishu_minarai_code")
-        builder.select_as("CASE WHEN ra.track_code != '0' THEN ra.track_code ELSE NULL END", "track_code")
+        builder.select_as("""
+            CASE 
+                WHEN se.data_type = '2' THEN 
+                    COALESCE(
+                        (SELECT jc.kishu_code 
+                        FROM jc 
+                        WHERE jc.kaisai_date = se.kaisai_date
+                        AND jc.keibajo_code = se.keibajo_code
+                        AND jc.kaisai_kai = se.kaisai_kai
+                        AND jc.kaisai_nichime = se.kaisai_nichime
+                        AND jc.kyoso_bango = se.kyoso_bango
+                        AND jc.umaban = se.umaban
+                        ORDER BY jc.happyo_datetime DESC
+                        LIMIT 1),
+                        se.kishu_code
+                    )
+                ELSE se.kishu_code
+            END
+        """, "kishu_code")
+        builder.select_as("""
+            CASE 
+                WHEN se.data_type = '2' THEN 
+                    COALESCE(
+                        (SELECT jc.kishu_minarai_code 
+                        FROM jc 
+                        WHERE jc.kaisai_date = se.kaisai_date
+                        AND jc.keibajo_code = se.keibajo_code
+                        AND jc.kaisai_kai = se.kaisai_kai
+                        AND jc.kaisai_nichime = se.kaisai_nichime
+                        AND jc.kyoso_bango = se.kyoso_bango
+                        AND jc.umaban = se.umaban
+                        ORDER BY jc.happyo_datetime DESC
+                        LIMIT 1),
+                        se.kishu_minarai_code
+                    )
+                ELSE se.kishu_minarai_code
+            END
+        """, "kishu_minarai_code")
+        builder.select_as("""
+            CASE 
+                WHEN se.data_type = '2' THEN 
+                    COALESCE(
+                        (SELECT cc.track_code 
+                        FROM cc 
+                        WHERE cc.kaisai_date = se.kaisai_date
+                        AND cc.keibajo_code = se.keibajo_code
+                        AND cc.kaisai_kai = se.kaisai_kai
+                        AND cc.kaisai_nichime = se.kaisai_nichime
+                        AND cc.kyoso_bango = se.kyoso_bango),
+                        ra.track_code
+                    )
+                ELSE ra.track_code
+            END
+        """, "track_code")
         builder.select_as("CASE WHEN ra.course_kubun != '0' THEN ra.course_kubun ELSE NULL END", "course_kubun")
-        builder.select_as("CASE WHEN ra.tenko_code != '0' THEN ra.tenko_code ELSE NULL END", "tenko_code")
-        builder.select_as("CASE WHEN ra.babajotai_code != '0' THEN ra.babajotai_code ELSE NULL END", "babajotai_code")
+        builder.select_as("""
+            CASE 
+                WHEN se.data_type = '2' THEN 
+                    (SELECT we.tenko_code 
+                    FROM we 
+                    WHERE we.kaisai_date = ra.kaisai_date
+                    AND we.keibajo_code = ra.keibajo_code
+                    AND we.kaisai_kai = ra.kaisai_kai
+                    AND we.kaisai_nichime = ra.kaisai_nichime
+                    AND we.happyo_datetime < (ra.kaisai_date + ra.hasso_time)
+                    AND we.tenko_code != '0'
+                    ORDER BY we.happyo_datetime DESC
+                    LIMIT 1)
+                ELSE ra.tenko_code
+            END
+        """, "tenko_code")
+        builder.select_as("""
+            CASE 
+                WHEN se.data_type = '2' THEN 
+                    CASE 
+                        WHEN CAST(ra.track_code AS INTEGER) BETWEEN 10 AND 22 
+                          OR CAST(ra.track_code AS INTEGER) = 51 
+                          OR CAST(ra.track_code AS INTEGER) BETWEEN 53 AND 59 
+                        THEN 
+                            (SELECT we.babajotai_code_shiba 
+                            FROM we 
+                            WHERE we.kaisai_date = ra.kaisai_date
+                            AND we.keibajo_code = ra.keibajo_code
+                            AND we.kaisai_kai = ra.kaisai_kai
+                            AND we.kaisai_nichime = ra.kaisai_nichime
+                            AND we.happyo_datetime < (ra.kaisai_date + ra.hasso_time)
+                            AND we.babajotai_code_shiba != '0'
+                            ORDER BY we.happyo_datetime DESC
+                            LIMIT 1)
+                        WHEN CAST(ra.track_code AS INTEGER) BETWEEN 23 AND 29 
+                          OR CAST(ra.track_code AS INTEGER) = 52 
+                        THEN 
+                            (SELECT we.babajotai_code_dirt 
+                            FROM we 
+                            WHERE we.kaisai_date = ra.kaisai_date
+                            AND we.keibajo_code = ra.keibajo_code
+                            AND we.kaisai_kai = ra.kaisai_kai
+                            AND we.kaisai_nichime = ra.kaisai_nichime
+                            AND we.happyo_datetime < (ra.kaisai_date + ra.hasso_time)
+                            AND we.babajotai_code_dirt != '0'
+                            ORDER BY we.happyo_datetime DESC
+                            LIMIT 1)
+                        ELSE ra.babajotai_code
+                    END
+                ELSE ra.babajotai_code
+            END
+        """, "babajotai_code")
         builder.select_as("CASE WHEN um.chokyoshi_code != 0 THEN um.chokyoshi_code ELSE NULL END", "chokyoshi_code")
         builder.select_as("CASE WHEN ks.seibetsu_kubun != '0' AND ks.seibetsu_kubun IS NOT NULL THEN ks.seibetsu_kubun ELSE NULL END", "kishu_seibetsu")
         builder.select_as("CASE WHEN um.seibetsu_code != '0' AND um.seibetsu_code IS NOT NULL THEN um.seibetsu_code ELSE NULL END", "uma_seibetsu")
         
         # 3代血統情報を追加（条件に基づいて処理）
-        # 各血統登録番号について、該当するhnテーブルのketto_toroku_bangoが存在し0でない場合はそれを使用
         for i in range(1, 15):
             idx_str = f"{i:02d}"
             builder.select_as(
@@ -103,7 +236,26 @@ class TrifectaDataset(BaseDataset):
         # データフィルタ条件を追加
         builder.where("se.data_type IN ('7', '2')")
         builder.where("(se.ijo_kubun_code IS NULL OR se.ijo_kubun_code NOT IN ('1', '2', '3', '4', '5'))")
-        
+
+        # data_typeが'2'のときにavテーブルとの関連をチェックする条件を追加
+        builder.where("""
+            CASE 
+                WHEN se.data_type = '2' THEN 
+                    NOT EXISTS (
+                        SELECT 1 
+                        FROM av 
+                        WHERE av.kaisai_date = se.kaisai_date 
+                        AND av.keibajo_code = se.keibajo_code 
+                        AND av.kaisai_kai = se.kaisai_kai 
+                        AND av.kaisai_nichime = se.kaisai_nichime 
+                        AND av.kyoso_bango = se.kyoso_bango 
+                        AND av.umaban = se.umaban 
+                        AND av.data_type IN ('1', '2')
+                    )
+                ELSE TRUE
+            END
+        """)
+
         # 推論モードではなく、訓練・評価モードのときだけ着順フィルタを適用
         if self.mode != self.MODE_INFERENCE:
             builder.where("(se.kakutei_chakujun IS NOT NULL AND se.kakutei_chakujun != 0)")  # 確定着順がある馬のみ

@@ -6,3 +6,4 @@ pyinstaller
 pytest
 pip-tools
 pandas
+openpyxl

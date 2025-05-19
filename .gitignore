@@ -90,3 +90,8 @@ models/
 *.pth
 *.onnx
 *.h5
+
+# Exported data files
+exports/
+*.xlsx
+*.csv

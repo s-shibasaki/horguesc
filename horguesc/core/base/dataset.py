@@ -68,9 +68,9 @@ class BaseDataset(abc.ABC):
         self.batch_size = batch_size
         
         # データ拡張のパラメータを設定から読み込む
-        self.num_noise_scale = config.getfloat('augmentation', 'num_noise_scale', fallback=0.1)
-        self.num_nan_prob = config.getfloat('augmentation', 'num_nan_prob', fallback=0.05)
-        self.cat_null_prob = config.getfloat('augmentation', 'cat_null_prob', fallback=0.05)
+        self.num_noise_scale = config.getfloat('augmentation', 'num_noise_scale', fallback=0.05)
+        self.num_nan_prob = config.getfloat('augmentation', 'num_nan_prob', fallback=0.02)
+        self.cat_null_prob = config.getfloat('augmentation', 'cat_null_prob', fallback=0.02)
         
         # 追加の引数を保存
         self.args = args

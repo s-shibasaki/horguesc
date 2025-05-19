@@ -40,6 +40,15 @@ def main():
     predict_parser = subparsers.add_parser('predict', help='make predictions with a trained model')
     _add_common_arguments(predict_parser)
     
+    # Export dataset command parser
+    export_parser = subparsers.add_parser('export', help='export dataset samples to Excel for verification')
+    _add_common_arguments(export_parser)
+    export_parser.add_argument('--export.mode', choices=['train', 'eval', 'inference'], help='Dataset mode to export')
+    export_parser.add_argument('--export.start_date', help='Start date for dataset (YYYY-MM-DD)')
+    export_parser.add_argument('--export.end_date', help='End date for dataset (YYYY-MM-DD)')
+    export_parser.add_argument('--export.sample_size', type=int, help='Number of samples to export')
+    export_parser.add_argument('--export.output_dir', help='Directory to save Excel files')
+    
     args = parser.parse_args()
 
     if args.version:
@@ -64,6 +73,10 @@ def main():
             elif args.command == 'predict':
                 from .commands import predict
                 return predict.run(config)
+                
+            elif args.command == 'export':
+                from .commands import export
+                return export.run(config)
                 
         except ValueError as e:
             logger.error(str(e))

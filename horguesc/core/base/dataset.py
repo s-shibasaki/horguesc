@@ -67,6 +67,10 @@ class BaseDataset(abc.ABC):
         self._next_batch_index = 0
         self.batch_size = batch_size
         
+        # データ拡張のパラメータを設定
+        self.num_noise_scale = 0.05  # 数値特徴量に加えるノイズのスケール
+        self.cat_null_prob = 0.05    # カテゴリカル特徴量をNullにする確率
+        
         # 追加の引数を保存
         self.args = args
         self.kwargs = kwargs
@@ -98,7 +102,7 @@ class BaseDataset(abc.ABC):
     def collect_features(self, feature_processor: Any) -> 'BaseDataset':
         """特徴量プロセッサーに生データの特徴量を収集させます。"""
         if self.raw_data is None:
-            raise ValueError(f"{self.get_name()} データが取得されていません。先に fetch_data() を呼び出してください")
+            raise ValueError(f"{self.__class__.__name__} データが取得されていません。先に fetch_data() を呼び出してください")
         
         if not self._data_collected:
             logger.info(f"{self.__class__.__name__} データセットから特徴量の値を収集中...")
@@ -111,7 +115,7 @@ class BaseDataset(abc.ABC):
     def process_features(self, feature_processor: Any) -> 'BaseDataset':
         """特徴量プロセッサーを使って特徴量を処理します。"""
         if self.raw_data is None:
-            raise ValueError(f"{self.get_name()} データが取得されていません。先に fetch_data() を呼び出してください")
+            raise ValueError(f"{self.__class__.__name__} データが取得されていません。先に fetch_data() を呼び出してください")
         
         if not self._data_processed:
             logger.info(f"{self.__class__.__name__} データセットの特徴量を処理中...")
@@ -152,6 +156,10 @@ class BaseDataset(abc.ABC):
                 # 評価・推論モードではインデックスをリセットするだけ（シャッフルなし）
                 logger.debug(f"{self.__class__.__name__} データセット: 最後のバッチに到達したためインデックスをリセットします")
                 self._init_batch_indices(shuffle=False)
+
+        # トレーニングモードの場合、バッチデータに拡張を適用
+        if self.mode == self.MODE_TRAIN:
+            batch_data = self._apply_data_augmentation(batch_data)
 
         return batch_data, is_last_batch
     
@@ -297,6 +305,64 @@ class BaseDataset(abc.ABC):
         
         return processed
     
+    def _apply_data_augmentation(self, batch_data: Dict[str, Any]) -> Dict[str, Any]:
+        """データ拡張処理を適用します。トレーニングモードでのみ使用されます。
+        
+        Args:
+            batch_data: バッチデータ
+            
+        Returns:
+            拡張されたバッチデータ
+        """
+        # コピーして元のデータを変更しないようにする
+        augmented_data = batch_data.copy()
+        
+        # 数値特徴量にノイズを追加
+        for feature_name in self.config.numerical_features:
+            if feature_name in augmented_data and isinstance(augmented_data[feature_name], torch.Tensor):
+                tensor = augmented_data[feature_name]
+                
+                # NaNの場所を記録
+                mask = ~torch.isnan(tensor)
+                
+                # 非NaN値にのみノイズを追加
+                if mask.any():
+                    # 特徴量はすでに正規化されているため、標準偏差は常に1.0
+                    noise_scale = self.num_noise_scale
+                    
+                    # ノイズテンソルを生成
+                    noise = torch.randn_like(tensor) * noise_scale
+                    
+                    # マスクを適用してNaNにはノイズを加えない
+                    noise = noise.masked_fill(~mask, 0.0)
+                    
+                    # ノイズを追加
+                    augmented_data[feature_name] = tensor + noise
+                    
+                    logger.debug(f"数値特徴量 '{feature_name}' にスケール {noise_scale:.4f} のノイズを追加しました")
+    
+        # カテゴリカル特徴量をランダムにNULLに設定
+        for feature_name in self.config.categorical_features:
+            if feature_name in augmented_data and isinstance(augmented_data[feature_name], torch.Tensor):
+                tensor = augmented_data[feature_name]
+                
+                # ランダムマスクを作成（cat_null_probの確率で各要素をTrue）
+                null_mask = torch.rand_like(tensor, dtype=torch.float) < self.cat_null_prob
+                
+                # 既に0（NULL）になっている場所はマスクから除外
+                null_mask = null_mask & (tensor != 0)
+                
+                if null_mask.any():
+                    # マスクが適用される要素数を記録
+                    num_nulled = null_mask.sum().item()
+                    
+                    # 0（NULL）に設定
+                    augmented_data[feature_name] = tensor.masked_fill(null_mask, 0)
+                    
+                    logger.debug(f"カテゴリカル特徴量 '{feature_name}' の {num_nulled} 要素をランダムにNULLに設定しました")
+    
+        return augmented_data
+    
     def _init_batch_indices(self, shuffle=None) -> None:
         """バッチ処理用のインデックス配列を初期化します。
         
@@ -329,6 +395,9 @@ class BaseDataset(abc.ABC):
     
     def _get_all_data(self) -> Dict[str, np.ndarray]:
         """全てのデータを返します。サブクラスでオーバーライド可能。"""
+        # トレーニングモードの場合、データ拡張を適用
+        if self.mode == self.MODE_TRAIN:
+            return self._apply_data_augmentation(self.processed_data)
         return self.processed_data
     
     def _get_batch_at_index(self, batch_size: int, batch_index: int) -> Dict[str, np.ndarray]:

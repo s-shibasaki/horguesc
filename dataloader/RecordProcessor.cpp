@@ -192,9 +192,135 @@ bool RecordProcessor::Initialize() {
 			"umaban SMALLINT, "
 			"bataiju SMALLINT, "
 			"zogensa SMALLINT, "
-			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, umaban))";
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, umaban))";
 		command->ExecuteNonQuery();
 
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS tansho ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"kyoso_bango SMALLINT, "
+			"happyo_datetime TIMESTAMP, "
+			"umaban SMALLINT, "
+			"odds INT, "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, umaban))";
+		command->ExecuteNonQuery();
+
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS fukusho ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"kyoso_bango SMALLINT, "
+			"happyo_datetime TIMESTAMP, "
+			"umaban SMALLINT, "
+			"odds INT, "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, umaban))";
+		command->ExecuteNonQuery();
+
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS wakuren ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"kyoso_bango SMALLINT, "
+			"happyo_datetime TIMESTAMP, "
+			"wakuban SMALLINT, "
+			"odds INT, "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, wakuban))";
+		command->ExecuteNonQuery();
+
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS umaren ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"kyoso_bango SMALLINT, "
+			"happyo_datetime TIMESTAMP, "
+			"umaban_1 SMALLINT, "
+			"umaban_2 SMALLINT, "
+			"odds INT, "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, umaban_1, umaban_2))";
+		command->ExecuteNonQuery();
+
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS wide ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"kyoso_bango SMALLINT, "
+			"happyo_datetime TIMESTAMP, "
+			"umaban_1 SMALLINT, "
+			"umaban_2 SMALLINT, "
+			"odds INT, "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, umaban_1, umaban_2))";
+		command->ExecuteNonQuery();
+
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS umatan ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"kyoso_bango SMALLINT, "
+			"happyo_datetime TIMESTAMP, "
+			"umaban_1 SMALLINT, "
+			"umaban_2 SMALLINT, "
+			"odds INT, "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, umaban_1, umaban_2))";
+		command->ExecuteNonQuery();
+
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS sanrenpuku ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"kyoso_bango SMALLINT, "
+			"happyo_datetime TIMESTAMP, "
+			"umaban_1 SMALLINT, "
+			"umaban_2 SMALLINT, "
+			"umaban_3 SMALLINT, "
+			"odds INT, "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, umaban_1, umaban_2, umaban_3))";
+		command->ExecuteNonQuery();
+
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS sanrentan ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"kyoso_bango SMALLINT, "
+			"happyo_datetime TIMESTAMP, "
+			"umaban_1 SMALLINT, "
+			"umaban_2 SMALLINT, "
+			"umaban_3 SMALLINT, "
+			"odds INT, "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, umaban_1, umaban_2, umaban_3))";
+		command->ExecuteNonQuery();
 
 		return true;
 	}

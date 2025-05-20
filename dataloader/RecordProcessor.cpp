@@ -192,7 +192,7 @@ bool RecordProcessor::Initialize() {
 			"umaban SMALLINT, "
 			"bataiju SMALLINT, "
 			"zogensa SMALLINT, "
-			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, umaban))";
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, umaban))";
 		command->ExecuteNonQuery();
 
 		command->CommandText =
@@ -221,7 +221,8 @@ bool RecordProcessor::Initialize() {
 			"kyoso_bango SMALLINT, "
 			"happyo_datetime TIMESTAMP, "
 			"umaban SMALLINT, "
-			"odds INT, "
+			"min_odds INT, "
+			"max_odds INT, "
 			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, umaban))";
 		command->ExecuteNonQuery();
 
@@ -235,9 +236,10 @@ bool RecordProcessor::Initialize() {
 			"kaisai_nichime SMALLINT, "
 			"kyoso_bango SMALLINT, "
 			"happyo_datetime TIMESTAMP, "
-			"wakuban SMALLINT, "
+			"wakuban_1 SMALLINT, "
+			"wakuban_2 SMALLINT, "
 			"odds INT, "
-			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, wakuban))";
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, wakuban_1, wakuban_2))";
 		command->ExecuteNonQuery();
 
 		command->CommandText =
@@ -268,7 +270,8 @@ bool RecordProcessor::Initialize() {
 			"happyo_datetime TIMESTAMP, "
 			"umaban_1 SMALLINT, "
 			"umaban_2 SMALLINT, "
-			"odds INT, "
+			"min_odds INT, "
+			"max_odds INT, "
 			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, umaban_1, umaban_2))";
 		command->ExecuteNonQuery();
 
@@ -360,6 +363,18 @@ int RecordProcessor::ProcessRecord(array<Byte>^ record) {
 			return ProcessCCRecord(record);
 		else if (recordTypeId == "WH")
 			return ProcessWHRecord(record);
+		else if (recordTypeId == "O1")
+			return ProcessO1Record(record);
+		else if (recordTypeId == "O2")
+			return ProcessO2Record(record);
+		else if (recordTypeId == "O3")
+			return ProcessO3Record(record);
+		else if (recordTypeId == "O4")
+			return ProcessO4Record(record);
+		else if (recordTypeId == "O5")
+			return ProcessO5Record(record);
+		else if (recordTypeId == "O6")
+			return ProcessO6Record(record);
 		else
 			return PROCESS_SKIP; // Unknown record type, skip it
 	}

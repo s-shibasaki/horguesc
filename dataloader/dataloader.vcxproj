@@ -177,6 +177,12 @@
     <ClCompile Include="RecordProcessor_HN.cpp" />
     <ClCompile Include="RecordProcessor_JC.cpp" />
     <ClCompile Include="RecordProcessor_KS.cpp" />
+    <ClCompile Include="RecordProcessor_O1.cpp" />
+    <ClCompile Include="RecordProcessor_O2.cpp" />
+    <ClCompile Include="RecordProcessor_O3.cpp" />
+    <ClCompile Include="RecordProcessor_O4.cpp" />
+    <ClCompile Include="RecordProcessor_O5.cpp" />
+    <ClCompile Include="RecordProcessor_O6.cpp" />
     <ClCompile Include="RecordProcessor_RA.cpp" />
     <ClCompile Include="RecordProcessor_SE.cpp" />
     <ClCompile Include="RecordProcessor_TC.cpp" />

@@ -58,7 +58,7 @@ class TrifectaDataset(BaseDataset):
             CASE 
                 WHEN se.data_type = '2' THEN 
                     COALESCE(
-                        (SELECT jc.futan_juryo 
+                        (SELECT CASE WHEN jc.futan_juryo != 0 THEN jc.futan_juryo ELSE NULL END 
                         FROM jc 
                         WHERE jc.kaisai_date = se.kaisai_date
                         AND jc.keibajo_code = se.keibajo_code
@@ -68,27 +68,91 @@ class TrifectaDataset(BaseDataset):
                         AND jc.umaban = se.umaban
                         ORDER BY jc.happyo_datetime DESC
                         LIMIT 1),
-                        se.futan_juryo
+                        CASE WHEN se.futan_juryo != 0 THEN se.futan_juryo ELSE NULL END
                     )
-                ELSE se.futan_juryo
+                ELSE CASE WHEN se.futan_juryo != 0 THEN se.futan_juryo ELSE NULL END
             END
         """, "futan_juryo")
-        builder.select_as("CASE WHEN se.bataiju BETWEEN 2 AND 998 THEN se.bataiju ELSE NULL END", "bataiju")
-        builder.select_as("CASE WHEN se.zogensa BETWEEN -998 AND 998 THEN se.zogensa ELSE NULL END", "zogensa")
         builder.select_as("""
             CASE 
                 WHEN se.data_type = '2' THEN 
                     COALESCE(
-                        (SELECT cc.kyori 
+                        (SELECT CASE 
+                            WHEN wh.bataiju BETWEEN 2 AND 998 THEN wh.bataiju 
+                            ELSE NULL 
+                        END 
+                        FROM wh 
+                        WHERE wh.kaisai_date = se.kaisai_date
+                        AND wh.keibajo_code = se.keibajo_code
+                        AND wh.kaisai_kai = se.kaisai_kai
+                        AND wh.kaisai_nichime = se.kaisai_nichime
+                        AND wh.kyoso_bango = se.kyoso_bango
+                        AND wh.umaban = se.umaban
+                        LIMIT 1),
+                        CASE 
+                            WHEN se.bataiju BETWEEN 2 AND 998 THEN se.bataiju 
+                            ELSE NULL 
+                        END
+                    )
+                ELSE 
+                    CASE 
+                        WHEN se.bataiju BETWEEN 2 AND 998 THEN se.bataiju 
+                        ELSE NULL 
+                    END
+            END
+        """, "bataiju")
+        builder.select_as("""
+            CASE 
+                WHEN se.data_type = '2' THEN 
+                    COALESCE(
+                        (SELECT CASE 
+                            WHEN wh.zogensa BETWEEN -998 AND 998 THEN wh.zogensa 
+                            ELSE NULL 
+                        END 
+                        FROM wh 
+                        WHERE wh.kaisai_date = se.kaisai_date
+                        AND wh.keibajo_code = se.keibajo_code
+                        AND wh.kaisai_kai = se.kaisai_kai
+                        AND wh.kaisai_nichime = se.kaisai_nichime
+                        AND wh.kyoso_bango = se.kyoso_bango
+                        AND wh.umaban = se.umaban
+                        LIMIT 1),
+                        CASE 
+                            WHEN se.zogensa BETWEEN -998 AND 998 THEN se.zogensa 
+                            ELSE NULL 
+                        END
+                    )
+                ELSE
+                    CASE 
+                        WHEN se.zogensa BETWEEN -998 AND 998 THEN se.zogensa 
+                        ELSE NULL 
+                    END
+            END
+        """, "zogensa")
+        builder.select_as("""
+            CASE 
+                WHEN se.data_type = '2' THEN 
+                    COALESCE(
+                        (SELECT CASE
+                            WHEN cc.kyori BETWEEN 0 AND 9999 THEN cc.kyori
+                            ELSE NULL
+                        END
                         FROM cc 
                         WHERE cc.kaisai_date = se.kaisai_date
                         AND cc.keibajo_code = se.keibajo_code
                         AND cc.kaisai_kai = se.kaisai_kai
                         AND cc.kaisai_nichime = se.kaisai_nichime
                         AND cc.kyoso_bango = se.kyoso_bango),
-                        ra.kyori
+                        CASE
+                            WHEN ra.kyori BETWEEN 0 AND 9999 THEN ra.kyori
+                            ELSE NULL
+                        END
                     )
-                ELSE ra.kyori 
+                ELSE
+                    CASE
+                        WHEN ra.kyori != 0 THEN ra.kyori 
+                        ELSE NULL 
+                    END
             END
         """, "kyori")
         builder.select_as(days_before_expr, "days_before")
@@ -102,7 +166,10 @@ class TrifectaDataset(BaseDataset):
             CASE 
                 WHEN se.data_type = '2' THEN 
                     COALESCE(
-                        (SELECT jc.kishu_code 
+                        (SELECT CASE
+                            WHEN jc.kishu_code != 0 THEN jc.kishu_code
+                            ELSE NULL
+                        END 
                         FROM jc 
                         WHERE jc.kaisai_date = se.kaisai_date
                         AND jc.keibajo_code = se.keibajo_code
@@ -112,9 +179,16 @@ class TrifectaDataset(BaseDataset):
                         AND jc.umaban = se.umaban
                         ORDER BY jc.happyo_datetime DESC
                         LIMIT 1),
-                        se.kishu_code
+                        CASE 
+                            WHEN se.kishu_code != 0 THEN se.kishu_code
+                            ELSE NULL
+                        END
                     )
-                ELSE se.kishu_code
+                ELSE 
+                    CASE 
+                        WHEN se.kishu_code != 0 THEN se.kishu_code
+                        ELSE NULL
+                    END
             END
         """, "kishu_code")
         builder.select_as("""
@@ -140,23 +214,33 @@ class TrifectaDataset(BaseDataset):
             CASE 
                 WHEN se.data_type = '2' THEN 
                     COALESCE(
-                        (SELECT cc.track_code 
+                        (SELECT CASE
+                            WHEN cc.track_code != '00' THEN cc.track_code
+                            ELSE NULL
+                        END
                         FROM cc 
                         WHERE cc.kaisai_date = se.kaisai_date
                         AND cc.keibajo_code = se.keibajo_code
                         AND cc.kaisai_kai = se.kaisai_kai
                         AND cc.kaisai_nichime = se.kaisai_nichime
                         AND cc.kyoso_bango = se.kyoso_bango),
-                        ra.track_code
+                        CASE 
+                            WHEN ra.track_code != '00' THEN ra.track_code
+                            ELSE NULL
+                        END
                     )
-                ELSE ra.track_code
+                ELSE
+                    CASE
+                        WHEN ra.track_code != '00' THEN ra.track_code
+                        ELSE NULL
+                    END
             END
         """, "track_code")
         builder.select_as("CASE WHEN ra.course_kubun != '0' THEN ra.course_kubun ELSE NULL END", "course_kubun")
         builder.select_as("""
             CASE 
                 WHEN se.data_type = '2' THEN 
-                    (SELECT we.tenko_code 
+                    (SELECT we.tenko_code
                     FROM we 
                     WHERE we.kaisai_date = ra.kaisai_date
                     AND we.keibajo_code = ra.keibajo_code
@@ -166,7 +250,11 @@ class TrifectaDataset(BaseDataset):
                     AND we.tenko_code != '0'
                     ORDER BY we.happyo_datetime DESC
                     LIMIT 1)
-                ELSE ra.tenko_code
+                ELSE
+                    CASE
+                        WHEN ra.tenko_code != '0' THEN ra.tenko_code
+                        ELSE NULL
+                    END
             END
         """, "tenko_code")
         builder.select_as("""
@@ -200,9 +288,17 @@ class TrifectaDataset(BaseDataset):
                             AND we.babajotai_code_dirt != '0'
                             ORDER BY we.happyo_datetime DESC
                             LIMIT 1)
-                        ELSE ra.babajotai_code
+                        ELSE 
+                            CASE
+                                WHEN ra.babajotai_code != '0' THEN ra.babajotai_code
+                                ELSE NULL
+                            END
                     END
-                ELSE ra.babajotai_code
+                ELSE 
+                    CASE
+                        WHEN ra.babajotai_code != '0' THEN ra.babajotai_code
+                        ELSE NULL
+                    END
             END
         """, "babajotai_code")
         builder.select_as("CASE WHEN um.chokyoshi_code != 0 THEN um.chokyoshi_code ELSE NULL END", "chokyoshi_code")

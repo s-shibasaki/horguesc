@@ -108,6 +108,7 @@ bool DataLoader::ExecuteRealtime() {
 
     // Today's date in YYYYMMDD format
     String^ today = DateTime::Now.ToString("yyyyMMdd");
+	//today = "20250518"; // For testing purposes, set a specific date
     
     // Process date-based data specs first
     array<String^>^ dateBasedDataSpecs = {"0B15", "0B11", "0B14", "0B13", "0B17", "0B51"};

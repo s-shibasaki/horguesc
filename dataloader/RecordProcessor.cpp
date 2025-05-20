@@ -180,6 +180,22 @@ bool RecordProcessor::Initialize() {
 			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango))";
 		command->ExecuteNonQuery(); // この行を追加
 
+		command->CommandText =
+			"CREATE TABLE IF NOT EXISTS wh ("
+			"data_type CHAR(1), "
+			"creation_date DATE, "
+			"kaisai_date DATE, "
+			"keibajo_code CHAR(2), "
+			"kaisai_kai SMALLINT, "
+			"kaisai_nichime SMALLINT, "
+			"kyoso_bango SMALLINT, "
+			"umaban SMALLINT, "
+			"bataiju SMALLINT, "
+			"zogensa SMALLINT, "
+			"PRIMARY KEY (kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, umaban))";
+		command->ExecuteNonQuery();
+
+
 		return true;
 	}
 	catch (Exception^ ex) {
@@ -216,6 +232,8 @@ int RecordProcessor::ProcessRecord(array<Byte>^ record) {
 			return ProcessTCRecord(record);
 		else if (recordTypeId == "CC")
 			return ProcessCCRecord(record);
+		else if (recordTypeId == "WH")
+			return ProcessWHRecord(record);
 		else
 			return PROCESS_SKIP; // Unknown record type, skip it
 	}

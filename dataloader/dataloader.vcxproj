@@ -182,6 +182,7 @@
     <ClCompile Include="RecordProcessor_TC.cpp" />
     <ClCompile Include="RecordProcessor_UM.cpp" />
     <ClCompile Include="RecordProcessor_WE.cpp" />
+    <ClCompile Include="RecordProcessor_WH.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Config.h" />

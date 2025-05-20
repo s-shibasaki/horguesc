@@ -15,6 +15,7 @@ private:
 	int ProcessJCRecord(array<System::Byte>^ record);
 	int ProcessTCRecord(array<System::Byte>^ record);
 	int ProcessCCRecord(array<System::Byte>^ record);
+	int ProcessWHRecord(array<System::Byte>^ record);
 	System::String^ ByteSubstring(array<System::Byte>^ bytes, int byteStartIndex, int byteLength);
 
 public:

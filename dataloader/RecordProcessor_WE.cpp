@@ -20,11 +20,20 @@ int RecordProcessor::ProcessWERecord(array<Byte>^ record) {
         command->Parameters->AddWithValue("@kaisai_kai", Int16::Parse(ByteSubstring(record, 21, 2)));
         command->Parameters->AddWithValue("@kaisai_nichime", Int16::Parse(ByteSubstring(record, 23, 2)));
         
-        // happyo_datetime を修正: 年はkaisaiDateから取得し、月日時分はByteSubstringから取得
+        // happyo_datetime 処理: '00000000'の場合は特別処理
         String^ happyoTimeStr = ByteSubstring(record, 25, 8); // MMddHHmm 形式
-        String^ happyoYear = kaisaiDateStr->Substring(0, 4); // 年はkaisai_dateから
-        String^ combinedDateTimeStr = String::Format("{0}{1}", happyoYear, happyoTimeStr);
-        DateTime^ happyoDateTime = DateTime::ParseExact(combinedDateTimeStr, "yyyyMMddHHmm", nullptr);
+        DateTime^ happyoDateTime;
+        
+        if (happyoTimeStr == "00000000") {
+            // '00000000'の場合はデータ作成年月日の0時0分を使用
+            happyoDateTime = DateTime(creationDate->Year, creationDate->Month, creationDate->Day, 0, 0, 0);
+        } else {
+            // 通常処理: 年はkaisai_dateから取得し、月日時分はByteSubstringから取得
+            String^ happyoYear = kaisaiDateStr->Substring(0, 4);
+            String^ combinedDateTimeStr = String::Format("{0}{1}", happyoYear, happyoTimeStr);
+            happyoDateTime = DateTime::ParseExact(combinedDateTimeStr, "yyyyMMddHHmm", nullptr);
+        }
+        
         command->Parameters->AddWithValue("@happyo_datetime", happyoDateTime);
         
         command->Parameters->AddWithValue("@henko_shikibetsu", ByteSubstring(record, 33, 1));
@@ -72,7 +81,7 @@ int RecordProcessor::ProcessWERecord(array<Byte>^ record) {
             "keibajo_code = @keibajo_code AND "
             "kaisai_kai = @kaisai_kai AND "
             "kaisai_nichime = @kaisai_nichime AND "
-            "happyo_datetime = @happyo_datetime AND " // スペースを追加
+            "happyo_datetime = @happyo_datetime AND "
             "henko_shikibetsu = @henko_shikibetsu";
         command->ExecuteNonQuery();
         return PROCESS_SUCCESS;

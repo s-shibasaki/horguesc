@@ -245,6 +245,8 @@ class TrifectaModel(BaseModel):
             dict: Dictionary of metrics:
                 - accuracy: Proportion of correctly predicted trifectas
                 - top5_accuracy: Proportion of targets in top 5 predictions
+                - top10_accuracy: Proportion of targets in top 10 predictions
+                - top20_accuracy: Proportion of targets in top 20 predictions
                 - mean_rank: Average rank of the correct trifecta
         """
         metrics = {}
@@ -257,19 +259,27 @@ class TrifectaModel(BaseModel):
         probabilities = outputs['probabilities']
         trifecta_targets = targets['target_trifecta'].to(probabilities.device)
         
-        # Get the highest probability predictions
-        _, predicted_indices = torch.topk(probabilities, k=5, dim=1)
-        
         # Calculate accuracy (exact match)
-        top1_predictions = predicted_indices[:, 0]
-        correct = (top1_predictions == trifecta_targets).float()
+        _, top1_predictions = torch.topk(probabilities, k=1, dim=1)
+        correct = (top1_predictions.squeeze(-1) == trifecta_targets).float()
         accuracy = correct.mean().item()
         metrics['accuracy'] = accuracy
         
-        # Top-5 accuracy
-        is_in_top5 = torch.any(predicted_indices == trifecta_targets.unsqueeze(1), dim=1).float()
-        top5_accuracy = is_in_top5.mean().item()
-        metrics['top5_accuracy'] = top5_accuracy
+        # Calculate top-k accuracies
+        for k in [5, 10, 20]:
+            # Skip if we have fewer than k possible combinations
+            if probabilities.shape[1] < k:
+                logger.warning(f"Cannot compute top{k}_accuracy: fewer than {k} combinations available")
+                metrics[f'top{k}_accuracy'] = float('nan')
+                continue
+                
+            # Get top k predictions
+            _, top_k_predictions = torch.topk(probabilities, k=k, dim=1)
+            
+            # Check if the target is in the top k predictions
+            is_in_top_k = torch.any(top_k_predictions == trifecta_targets.unsqueeze(1), dim=1).float()
+            top_k_accuracy = is_in_top_k.mean().item()
+            metrics[f'top{k}_accuracy'] = top_k_accuracy
         
         # Calculate mean rank of correct prediction
         batch_size = probabilities.shape[0]

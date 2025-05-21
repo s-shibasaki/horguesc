@@ -139,7 +139,8 @@ bool DataLoader::ExecuteRealtime() {
         reader->Close();
         
         // Process each race ID for the race-specific data specs
-        array<String^>^ raceBasedDataSpecs = {"0B30", "0B20"};
+        //array<String^>^ raceBasedDataSpecs = { "0B30", "0B20", "0B41", "0B42" };
+        array<String^>^ raceBasedDataSpecs = { "0B30", "0B20" };
         for each (String^ dataSpec in raceBasedDataSpecs) {
             for each (String^ raceId in raceIds) {
                 if (!ProcessRealtimeChunk(dataSpec, raceId)) {

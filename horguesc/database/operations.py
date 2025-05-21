@@ -3,7 +3,7 @@ Database operations for horguesc.
 """
 import logging
 from .connection import DatabaseConnection
-import psycopg2.extras  # 追加: psycopg2.extrasをインポート
+import psycopg2.extras
 
 logger = logging.getLogger(__name__)
 
@@ -36,17 +36,20 @@ class DatabaseOperations:
             if params and not isinstance(params, tuple):
                 params = tuple(params)
                 
-            with self.db_conn.get_connection() as conn:
-                # as_dictがTrueの場合、DictCursorを使用
+            conn = None
+            try:
+                conn = self.db_conn.get_connection()
                 cursor_factory = psycopg2.extras.DictCursor if as_dict else None
-                cursor = conn.cursor(cursor_factory=cursor_factory)
-                
-                cursor.execute(query, params)
-                
-                if fetch_all:
-                    return cursor.fetchall()
-                else:
-                    return cursor.fetchone()
+                with conn.cursor(cursor_factory=cursor_factory) as cursor:
+                    cursor.execute(query, params)
+                    
+                    if fetch_all:
+                        return cursor.fetchall()
+                    else:
+                        return cursor.fetchone()
+            finally:
+                if conn:
+                    self.db_conn.release_connection(conn)
         except Exception as e:
             logger.error(f"Query execution failed: {str(e)}")
             raise
@@ -59,10 +62,15 @@ class DatabaseOperations:
             bool: True if connection successful, False otherwise
         """
         try:
-            with self.db_conn.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT 1")
-                return True
+            conn = None
+            try:
+                conn = self.db_conn.get_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT 1")
+                    return True
+            finally:
+                if conn:
+                    self.db_conn.release_connection(conn)
         except Exception as e:
             logger.error(f"Connection test failed: {str(e)}")
             return False

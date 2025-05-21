@@ -49,7 +49,10 @@ def run(config):
         # Create feature processor
         feature_processor = FeatureProcessor(config)
         
-        # Process each task
+        # Dictionary to store dataset objects
+        datasets = {}
+        
+        # First pass: Fetch raw data and collect features for all tasks
         for task in tasks:
             logger.info(f"Processing task: {task}")
             
@@ -82,23 +85,32 @@ def run(config):
                 # Export raw data
                 export_dataset_to_excel(dataset.raw_data, task, "raw", output_dir)
                 
-                # Process features if in train or eval mode
-                if mode in ['train', 'eval']:
-                    # Collect feature values
-                    dataset.collect_features(feature_processor)
-                    feature_processor.fit()
-                    
-                    # Process features
-                    dataset.process_features(feature_processor)
-                    
-                    # Export processed data
-                    export_processed_data_to_excel(dataset.processed_data, task, output_dir)
+                # Collect feature values
+                dataset.collect_features(feature_processor)
                 
-                logger.info(f"Successfully exported data for task {task}")
+                # Store dataset for later processing
+                datasets[task] = dataset
                 
             except Exception as e:
                 logger.error(f"Error processing dataset for task {task}: {e}", exc_info=True)
                 continue
+        
+        # Only fit the feature processor once after all tasks have collected features
+        logger.info("Fitting feature processor with collected features from all tasks")
+        feature_processor.fit()
+        
+        # Second pass: Process features for all datasets
+        for task, dataset in datasets.items():
+            try:
+                # Process features
+                dataset.process_features(feature_processor)
+                
+                # Export processed data
+                export_processed_data_to_excel(dataset.processed_data, task, output_dir)
+                
+                logger.info(f"Successfully exported processed data for task {task}")
+            except Exception as e:
+                logger.error(f"Error processing features for task {task}: {e}", exc_info=True)
         
         logger.info(f"All exports completed. Files saved to: {output_dir}")
         return 0

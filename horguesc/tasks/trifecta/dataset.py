@@ -387,7 +387,14 @@ class TrifectaDataset(BaseDataset):
                 logger.info(f"Trifectaデータの取得完了: {len(self.raw_data['kyoso_id'])}競走、{len(results)}頭")
             else:
                 logger.info(f"推論用Trifectaデータの取得完了（ターゲットなし）: {len(self.raw_data['kyoso_id'])}競走、{len(results)}頭")
-        
+            
+            # Add betting odds data
+            if self.mode == self.MODE_TRAIN:
+                logger.info("トレーニングモードではオッズデータを追加しません")
+            else:
+                logger.info("オッズデータを追加します")
+                self._add_betting_odds(db_ops)
+    
         except Exception as e:
             logger.error(f"データ取得中にエラーが発生しました: {e}")
             raise
@@ -560,3 +567,60 @@ class TrifectaDataset(BaseDataset):
             logger.info(f"3連単ターゲット作成完了: {len(valid_indices)}/{n_races} レースで有効なターゲットを作成")
         else:
             logger.warning("有効なターゲットが作成できませんでした")
+    
+    def _add_betting_odds(self, db_ops=None):
+        """
+        Add betting odds data to raw_data for each race.
+        
+        This method loads various betting odds types using OddsLoader and adds them to the dataset,
+        structured as arrays with shape [num_races, ...] to ensure compatibility with batch processing.
+        
+        Args:
+            db_ops: Optional database operations object. If None, a new one will be created.
+        """
+        if 'kyoso_id' not in self.raw_data or not self.raw_data['kyoso_id']:
+            logger.warning("No race data available to add betting odds")
+            return
+            
+        # Create db_ops if not provided
+        if db_ops is None:
+            from horguesc.database.operations import DatabaseOperations
+            db_ops = DatabaseOperations(self.config)
+        
+        # Import and initialize OddsLoader
+        from horguesc.core.betting.odds_loader import OddsLoader
+        odds_loader = OddsLoader(db_ops)
+        
+        # Get race IDs and necessary arrays for odds loading
+        race_ids = self.raw_data['kyoso_id']
+        
+        # Extract umaban and wakuban arrays
+        umaban_array = self.raw_data.get('umaban')
+        wakuban_array = self.raw_data.get('wakuban')
+        
+        # Load all odds types that we want to include
+        # odds_types = [
+        #     odds_loader.TANSHO,     # Win odds
+        #     odds_loader.FUKUSHO,    # Place odds
+        #     odds_loader.SANRENTAN,  # Trifecta odds - most important for this task
+        # ]
+        odds_types = None  # Load all odds types
+        
+        logger.info(f"Loading odds data for {len(race_ids)} races")
+        
+        try:
+            # Load odds data using OddsLoader
+            odds_data = odds_loader.load_odds(
+                race_ids=race_ids,
+                horse_numbers=umaban_array,
+                frame_numbers=wakuban_array,
+                odds_types=odds_types
+            )
+            
+            # Add odds data to raw_data with prefix 'odds_'
+            for odds_type, odds_array in odds_data.items():
+                self.raw_data[f'odds_{odds_type}'] = odds_array
+                logger.info(f"Added {odds_type} odds data with shape {odds_array.shape}")
+                
+        except Exception as e:
+            logger.error(f"Error loading odds data: {e}", exc_info=True)

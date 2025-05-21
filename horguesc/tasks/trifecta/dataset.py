@@ -405,13 +405,21 @@ class TrifectaDataset(BaseDataset):
         # 競走IDごとにデータをグループ化
         kyoso_groups = defaultdict(list)
         
-        # 競走IDを構成するカラムをクエリから取得
-        kyoso_id_columns = ['kaisai_date', 'keibajo_code', 'kaisai_kai', 'kaisai_nichime', 'kyoso_bango']
-        
         for row in query_results:
-            # 競走IDを生成
-            kyoso_id_parts = [str(row[col]) for col in kyoso_id_columns]
-            kyoso_id = '_'.join(kyoso_id_parts)
+            # 競走IDを生成 - 日付をYYYYmmDD形式に、他のコードは2桁に0埋め
+            kaisai_date = row['kaisai_date']
+            if isinstance(kaisai_date, str):
+                date_str = kaisai_date.replace('-', '')
+            else:  # datetime object
+                date_str = kaisai_date.strftime('%Y%m%d')
+            
+            keibajo_code = str(row['keibajo_code']).zfill(2)
+            kaisai_kai = str(row['kaisai_kai']).zfill(2)
+            kaisai_nichime = str(row['kaisai_nichime']).zfill(2)
+            kyoso_bango = str(row['kyoso_bango']).zfill(2)
+            
+            # アンダースコアなしで連結
+            kyoso_id = f"{date_str}{keibajo_code}{kaisai_kai}{kaisai_nichime}{kyoso_bango}"
             kyoso_groups[kyoso_id].append(row)
         
         # 最大出走頭数を計算

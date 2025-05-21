@@ -95,3 +95,6 @@ models/
 exports/
 *.xlsx
 *.csv
+
+# 作業用ノートブックディレクトリ
+workbooks/

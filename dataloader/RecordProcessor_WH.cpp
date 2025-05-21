@@ -1,6 +1,7 @@
 ﻿#include "RecordProcessor.h"
 
 using namespace System;
+using namespace System::Collections::Generic;
 using namespace Npgsql;
 
 int RecordProcessor::ProcessWHRecord(array<Byte>^ record) {
@@ -49,33 +50,8 @@ int RecordProcessor::ProcessWHRecord(array<Byte>^ record) {
 			command->ExecuteNonQuery();
 		}
 		
-		// Clear parameters for reuse
-		command->Parameters->Clear();
-		
-		// Prepare the insert command
-		command->CommandText = "INSERT INTO wh (data_type, creation_date, "
-			"kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, "
-			"umaban, bataiju, zogensa) "
-			"VALUES (@data_type, @creation_date, @kaisai_date, @keibajo_code, "
-			"@kaisai_kai, @kaisai_nichime, @kyoso_bango, @umaban, @bataiju, @zogensa)";
-			
-		// Add common parameters
-		command->Parameters->AddWithValue("@data_type", dataType);
-		command->Parameters->AddWithValue("@creation_date", creationDate);
-		command->Parameters->AddWithValue("@kaisai_date", kaisaiDate);
-		command->Parameters->AddWithValue("@keibajo_code", keibajoCode);
-		command->Parameters->AddWithValue("@kaisai_kai", kaisaiKai);
-		command->Parameters->AddWithValue("@kaisai_nichime", kaisaiNichime);
-		command->Parameters->AddWithValue("@kyoso_bango", kyosoBango);
-		
-		// Add parameter objects (will update values for each insert)
-		NpgsqlParameter^ umabanParam = gcnew NpgsqlParameter("@umaban", NpgsqlTypes::NpgsqlDbType::Smallint);
-		NpgsqlParameter^ bataijuParam = gcnew NpgsqlParameter("@bataiju", NpgsqlTypes::NpgsqlDbType::Smallint);
-		NpgsqlParameter^ zogensaParam = gcnew NpgsqlParameter("@zogensa", NpgsqlTypes::NpgsqlDbType::Smallint);
-		
-		command->Parameters->Add(umabanParam);
-		command->Parameters->Add(bataijuParam);
-		command->Parameters->Add(zogensaParam);
+		// バッチ処理のためのリストを作成
+		List<String^>^ batchValues = gcnew List<String^>();
 		
 		// Process each horse
 		for (int i = 0; i < 18; i++) {
@@ -93,37 +69,55 @@ int RecordProcessor::ProcessWHRecord(array<Byte>^ record) {
 			if (umaban <= 0) 
 				continue;
 			
-			umabanParam->Value = umaban;
-			
 			// Handle bataiju
+			String^ bataijuValue = "NULL";
 			String^ bataijuStr = ByteSubstring(record, 35 + 38 + (45 * i), 3);
 			if (bataijuStr != "   " && bataijuStr != "000" && bataijuStr != "999") {
 				try {
-					bataijuParam->Value = Int16::Parse(bataijuStr);
+					Int16 bataiju = Int16::Parse(bataijuStr);
+					bataijuValue = bataiju.ToString();
 				}
 				catch (...) {
-					bataijuParam->Value = DBNull::Value;
+					// Leave as NULL
 				}
-			}
-			else {
-				bataijuParam->Value = DBNull::Value;
 			}
 			
 			// Handle zogensa
+			String^ zogensaValue = "NULL";
 			String^ zogensaStr = ByteSubstring(record, 35 + 41 + (45 * i), 3);
 			if (zogensaStr != "    " && zogensaStr != " 999") {
 				try {
-					zogensaParam->Value = Int16::Parse(zogensaStr);
+					Int16 zogensa = Int16::Parse(zogensaStr);
+					zogensaValue = zogensa.ToString();
 				}
 				catch (...) {
-					zogensaParam->Value = DBNull::Value;
+					// Leave as NULL
 				}
 			}
-			else {
-				zogensaParam->Value = DBNull::Value;
-			}
 			
-			// Insert the record
+			// Format the values string for this horse
+			String^ valueStr = String::Format("('{0}', '{1}', '{2}', '{3}', '{4}', '{5}', '{6}', {7}, {8}, {9})",
+				dataType, 
+				creationDate->ToString("yyyy-MM-dd"), 
+				kaisaiDate->ToString("yyyy-MM-dd"),
+				keibajoCode,
+				kaisaiKai,
+				kaisaiNichime,
+				kyosoBango,
+				umaban,
+				bataijuValue,
+				zogensaValue);
+				
+			batchValues->Add(valueStr);
+		}
+		
+		// 一括挿入を実行
+		if (batchValues->Count > 0) {
+			String^ valuesSql = String::Join(", ", batchValues);
+			command->CommandText = "INSERT INTO wh (data_type, creation_date, "
+				"kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, "
+				"umaban, bataiju, zogensa) VALUES " + valuesSql;
+			command->Parameters->Clear();
 			command->ExecuteNonQuery();
 		}
 		

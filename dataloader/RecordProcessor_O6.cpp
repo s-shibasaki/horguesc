@@ -1,11 +1,11 @@
 ﻿#include "RecordProcessor.h"
 
 using namespace System;
+using namespace System::Collections::Generic;
 using namespace Npgsql;
 
 int RecordProcessor::ProcessO6Record(array<Byte>^ record) {
     try {
-
         NpgsqlCommand^ command = gcnew NpgsqlCommand(nullptr, connection);
         Object^ existingDateObj;
 
@@ -41,8 +41,6 @@ int RecordProcessor::ProcessO6Record(array<Byte>^ record) {
             "kyoso_bango = @kyoso_bango AND "
             "happyo_datetime = @happyo_datetime "
             "ORDER BY creation_date DESC LIMIT 1";
-        command->Parameters->AddWithValue("@data_type", dataType);
-        command->Parameters->AddWithValue("@creation_date", creationDate);
         command->Parameters->AddWithValue("@kaisai_date", kaisaiDate);
         command->Parameters->AddWithValue("@keibajo_code", keibajoCode);
         command->Parameters->AddWithValue("@kaisai_kai", kaisaiKai);
@@ -71,22 +69,9 @@ int RecordProcessor::ProcessO6Record(array<Byte>^ record) {
         }
 
         // 存在しない場合、または既に存在するものを削除した場合、追加処理を行う
-        command->CommandText = "INSERT INTO sanrentan (data_type, creation_date, "
-            "kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, "
-            "umaban_1, umaban_2, umaban_3, odds) "
-            "VALUES (@data_type, @creation_date, "
-            "@kaisai_date, @keibajo_code, @kaisai_kai, @kaisai_nichime, @kyoso_bango, @happyo_datetime, "
-            "@umaban_1, @umaban_2, @umaban_3, @odds)";
-        NpgsqlParameter^ umaban1Param = gcnew NpgsqlParameter("@umaban_1", NpgsqlTypes::NpgsqlDbType::Smallint);
-        NpgsqlParameter^ umaban2Param = gcnew NpgsqlParameter("@umaban_2", NpgsqlTypes::NpgsqlDbType::Smallint);
-        NpgsqlParameter^ umaban3Param = gcnew NpgsqlParameter("@umaban_3", NpgsqlTypes::NpgsqlDbType::Smallint);
-        NpgsqlParameter^ oddsParam = gcnew NpgsqlParameter("@odds", NpgsqlTypes::NpgsqlDbType::Integer);
-        command->Parameters->Add(umaban1Param);
-        command->Parameters->Add(umaban2Param);
-        command->Parameters->Add(umaban3Param);
-        command->Parameters->Add(oddsParam);
 
-        // Process each horse's odds data
+        List<String^>^ batchValues = gcnew List<String^>();
+        
         for (int i = 0; i < 4896; i++) {
             Int16 umaban1;
             try {
@@ -97,7 +82,6 @@ int RecordProcessor::ProcessO6Record(array<Byte>^ record) {
             }
             if (umaban1 <= 0)
                 continue;  // Skip if umaban is 0
-            umaban1Param->Value = umaban1;
 
             Int16 umaban2;
             try {
@@ -108,7 +92,6 @@ int RecordProcessor::ProcessO6Record(array<Byte>^ record) {
             }
             if (umaban2 <= 0)
                 continue;  // Skip if umaban is 0
-            umaban2Param->Value = umaban2;
 
             Int16 umaban3;
             try {
@@ -119,19 +102,30 @@ int RecordProcessor::ProcessO6Record(array<Byte>^ record) {
             }
             if (umaban3 <= 0)
                 continue;  // Skip if umaban is 0
-            umaban3Param->Value = umaban3;
 
+            String^ oddsValue;
             try {
                 Int32 odds = Int32::Parse(ByteSubstring(record, 40 + (i * 17) + 6, 7));
-                if (odds != 0)
-                    oddsParam->Value = odds;
-                else
-                    oddsParam->Value = DBNull::Value; // Set to NULL if odds is 0
+				oddsValue = (odds != 0) ? odds.ToString() : "NULL"; // Convert to string or set to NULL if odds is 0
             }
             catch (...) {
-                oddsParam->Value = DBNull::Value; // Set to NULL if odds is not valid
+                oddsValue = "NULL"; // Set to NULL if odds is not valid
             }
-            command->ExecuteNonQuery();  // Insert the record
+
+            String^ valueStr = String::Format("('{0}', '{1}', '{2}', '{3}', '{4}', '{5}', '{6}', '{7}', {8}, {9}, {10}, {11})",
+                dataType, creationDate->ToString("yyyy-MM-dd"), kaisaiDate->ToString("yyyy-MM-dd"), keibajoCode, kaisaiKai, kaisaiNichime, kyosoBango, happyoDateTime->ToString("yyyy-MM-dd HH:mm:ss"),
+				umaban1, umaban2, umaban3, oddsValue);
+            batchValues->Add(valueStr);
+        }
+
+        if (batchValues->Count > 0) {
+			String^ valuesSql = String::Join(", ", batchValues);
+            command->CommandText = "INSERT INTO sanrentan (data_type, creation_date, "
+                "kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, happyo_datetime, "
+                "umaban_1, umaban_2, umaban_3, odds) "
+				"VALUES " + valuesSql;
+            command->Parameters->Clear();
+            command->ExecuteNonQuery();
         }
 
         return PROCESS_SUCCESS;

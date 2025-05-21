@@ -175,7 +175,12 @@ bool DataLoader::ProcessRealtimeChunk(String^ dataSpec, String^ key) {
     }
     Console::WriteLine("OK.");
     
+    // Begin transaction
+    NpgsqlTransaction^ transaction = nullptr;
+    
     try {
+        transaction = connection->BeginTransaction();
+        
         int jvReadReturnCode;
         while (true) {
             String^ fileName;
@@ -185,6 +190,7 @@ bool DataLoader::ProcessRealtimeChunk(String^ dataSpec, String^ key) {
             
             if (jvReadReturnCode < -1) {
                 Console::WriteLine("Error occurred during data read. Error code: {0}", jvReadReturnCode);
+                RollbackTransaction(transaction);
                 return false;
             }
             else if (jvReadReturnCode == -1) {
@@ -202,19 +208,28 @@ bool DataLoader::ProcessRealtimeChunk(String^ dataSpec, String^ key) {
             
             if (processResult == RecordProcessor::PROCESS_ERROR) {
                 Console::WriteLine("Error occurred during process record.");
+                RollbackTransaction(transaction);
                 return false;
             }
             else if (processResult == RecordProcessor::PROCESS_SKIP) {
                 jvlink->JVSkip();
             }
         }
+        
+        // Commit transaction
+        Console::Write("Committing transaction: ");
+        transaction->Commit();
+        Console::WriteLine("OK.");
     }
     catch (Exception^ ex) {
         Console::WriteLine("Error occurred during data read: {0}", ex->Message);
+        RollbackTransaction(transaction);
         return false;
     }
+    finally {
+        jvlink->JVClose();
+    }
     
-    jvlink->JVClose();
     return true;
 }
 
@@ -295,15 +310,30 @@ bool DataLoader::Initialize() {
     }
     Console::WriteLine("OK.");
 
-    // Create timestamp table in the database
-    if (!CreateTimestampTable()) {
-        Console::WriteLine("Failed to create timestamp table.");
-        return false;
+    // Create timestamp table in the database with transaction
+    NpgsqlTransaction^ transaction = nullptr;
+    try {
+        transaction = connection->BeginTransaction();
+        
+        recordProcessor = gcnew RecordProcessor(connection);
+        if (!recordProcessor->Initialize()) {
+            Console::WriteLine("Failed to initialize Record Processor.");
+            RollbackTransaction(transaction);
+            return false;
+        }
+        
+        if (!CreateTimestampTable()) {
+            Console::WriteLine("Failed to create timestamp table.");
+            RollbackTransaction(transaction);
+            return false;
+        }
+        
+        // Commit the transaction
+        transaction->Commit();
     }
-
-    recordProcessor = gcnew RecordProcessor(connection);
-    if (!recordProcessor->Initialize()) {
-        Console::WriteLine("Failed to initialize Record Processor.");
+    catch (Exception^ ex) {
+        Console::WriteLine("Initialization error: {0}", ex->Message);
+        RollbackTransaction(transaction);
         return false;
     }
 
@@ -341,9 +371,13 @@ bool DataLoader::ProcessChunk(JVOpenParams^ params) {
         return false;
     }
 
-
-    ProgressBar^ jvGetsProgressBar = gcnew ProgressBar(readCount, 50, "Reading files");
+    // Begin transaction for all database operations in this chunk
+    NpgsqlTransaction^ transaction = nullptr;
     try {
+        transaction = connection->BeginTransaction();
+        
+        ProgressBar^ jvGetsProgressBar = gcnew ProgressBar(readCount, 50, "Reading files");
+        
         int jvReadReturnCode;
         while (true) {
             String^ fileName;
@@ -353,7 +387,8 @@ bool DataLoader::ProcessChunk(JVOpenParams^ params) {
 
             if (jvReadReturnCode < -1) {
                 Console::WriteLine();
-                Console::WriteLine("Error occured during data read. Error code: {0}", jvReadReturnCode);
+                Console::WriteLine("Error occurred during data read. Error code: {0}", jvReadReturnCode);
+                RollbackTransaction(transaction);
                 return false;
             }
             else if (jvReadReturnCode == -1) {
@@ -373,8 +408,8 @@ bool DataLoader::ProcessChunk(JVOpenParams^ params) {
             int processResult = recordProcessor->ProcessRecord(bytes);
 
             if (processResult == RecordProcessor::PROCESS_ERROR) {
-                // RecordProcessorで改行済み
-                Console::WriteLine("Error occured during process record.");
+                Console::WriteLine("Error occurred during process record.");
+                RollbackTransaction(transaction);
                 return false;
             }
             else if (processResult == RecordProcessor::PROCESS_SKIP) {
@@ -382,22 +417,31 @@ bool DataLoader::ProcessChunk(JVOpenParams^ params) {
                 jvGetsProgressBar->Increment();
             }
         }
+
+        // Save the lastFileTimestamp to the database after all data is processed
+        Console::Write("Updating last file timestamp: ");
+        if (UpdateLastFileTimestamp(lastFileTimestamp)) {
+            Console::WriteLine("OK.");
+        } else {
+            Console::WriteLine("Failed.");
+            RollbackTransaction(transaction);
+            return false;
+        }
+
+        // Commit the transaction if everything was successful
+        Console::Write("Committing transaction: ");
+        transaction->Commit();
+        Console::WriteLine("OK.");
+        
     }
     catch (Exception^ ex) {
         Console::WriteLine();
-        Console::WriteLine("Error occured during data read: {0}", ex->Message);
+        Console::WriteLine("Error occurred during data processing: {0}", ex->Message);
+        RollbackTransaction(transaction);
         return false;
     }
-
-    jvlink->JVClose();
-
-    // Save the lastFileTimestamp to the database after all data is processed
-    Console::Write("Updating last file timestamp: ");
-    if (UpdateLastFileTimestamp(lastFileTimestamp)) {
-        Console::WriteLine("OK.");
-    } else {
-        Console::WriteLine("Failed.");
-        // Not returning false here since this is not a critical failure
+    finally {
+        jvlink->JVClose();
     }
 
     return true;

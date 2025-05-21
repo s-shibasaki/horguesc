@@ -172,7 +172,7 @@ class MultitaskTrainer:
                 
                 # Separate inputs and targets based on their names
                 for key, value in batch.items():
-                    if key == 'target' or key.startswith('target_'):
+                    if key == 'target' or key.startswith('target_') or key.startswith('odds_'):
                         # Target data - these should already be tensors from BaseDataset
                         if isinstance(value, torch.Tensor):
                             targets[key] = value.to(self.device)
@@ -262,7 +262,7 @@ class MultitaskTrainer:
                     
                     # Separate inputs and targets
                     for key, value in batch_data.items():
-                        if key == 'target' or key.startswith('target_'):
+                        if key == 'target' or key.startswith('target_') or key.startswith('odds_'):
                             # Target data - these should already be tensors from BaseDataset
                             if isinstance(value, torch.Tensor):
                                 batch_targets[key] = value.to(self.device)

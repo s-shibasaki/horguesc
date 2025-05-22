@@ -384,6 +384,8 @@ class TrifectaDataset(BaseDataset):
             # 推論モード以外の場合のみ、3連単のターゲットを作成
             if self.mode != self.MODE_INFERENCE:
                 self._create_trifecta_targets()
+                # 追加の馬券種のターゲットを作成
+                self._create_additional_bet_targets()
                 logger.info(f"Trifectaデータの取得完了: {len(self.raw_data['kyoso_id'])}競走、{len(results)}頭")
             else:
                 logger.info(f"推論用Trifectaデータの取得完了（ターゲットなし）: {len(self.raw_data['kyoso_id'])}競走、{len(results)}頭")
@@ -562,7 +564,7 @@ class TrifectaDataset(BaseDataset):
             self.raw_data = filtered_data
             
             # ターゲットデータを追加
-            self.raw_data['target_trifecta'] = target_trifecta[valid_races]
+            self.raw_data['target_sanrentan'] = target_trifecta[valid_races]
             
             logger.info(f"3連単ターゲット作成完了: {len(valid_indices)}/{n_races} レースで有効なターゲットを作成")
         else:
@@ -624,3 +626,184 @@ class TrifectaDataset(BaseDataset):
                 
         except Exception as e:
             logger.error(f"Error loading odds data: {e}", exc_info=True)
+    
+    def _create_additional_bet_targets(self):
+        """
+        三連単(trifecta)以外の馬券種のターゲットを作成する
+    
+        - 単勝 (tansho/win): 1着の馬
+        - 複勝 (fukusho/place): 3着以内の馬
+        - 枠連 (wakuren/bracket quinella): 1着と2着の枠番の組み合わせ（順不同）
+        - 馬連 (umaren/quinella): 1着と2着の馬番の組み合わせ（順不同）
+        - ワイド (wide/quinella place): 3着以内に2頭の馬が入る組み合わせ（順不同）
+        - 馬単 (umatan/exacta): 1着と2着の馬番の組み合わせ（順序あり）
+        - 三連複 (sanrenpuku/trio): 3着以内の馬番の組み合わせ（順不同）
+        """
+        logger.info("追加の馬券種ターゲット情報の作成を開始")
+        
+        if 'kakutei_chakujun' not in self.raw_data or len(self.raw_data['kakutei_chakujun']) == 0:
+            logger.warning("確定着順データがないため、追加馬券種のターゲットを作成できません")
+            return
+        
+        # レース数と最大出走頭数を取得
+        n_races = len(self.raw_data['kyoso_id'])
+        max_horses = self.raw_data['kakutei_chakujun'].shape[1]
+        
+        # 各レースの実際の出走馬数
+        horse_counts = self.raw_data['horse_count']
+        
+        # 各馬券種のターゲットを格納する配列を初期化
+        target_tansho = np.full(n_races, -1, dtype=np.int64)                        # 単勝
+        target_fukusho = np.zeros((n_races, max_horses), dtype=np.int64)            # 複勝
+        target_wakuren = np.full(n_races, -1, dtype=np.int64)                       # 枠連
+        target_umaren = np.full(n_races, -1, dtype=np.int64)                        # 馬連
+        target_wide = np.zeros((n_races, (max_horses * (max_horses-1))//2), dtype=np.int64)  # ワイド
+        target_umatan = np.full(n_races, -1, dtype=np.int64)                        # 馬単
+        target_sanrenpuku = np.full(n_races, -1, dtype=np.int64)                    # 3連複
+        
+        # 組み合わせインデックスのマッピングを作成
+        # 馬連・ワイド・3連複用（順不同）
+        umaren_combinations = list(itertools.combinations(range(max_horses), 2))
+        sanrenpuku_combinations = list(itertools.combinations(range(max_horses), 3))
+        
+        # 馬単用（順序あり）
+        umatan_combinations = list(itertools.permutations(range(max_horses), 2))
+        
+        # 枠連用（枠番の組み合わせ、順不同）
+        max_frames = 8  # 日本の競馬では最大8枠
+        wakuren_combinations = []
+        for i in range(1, max_frames + 1):
+            for j in range(i, max_frames + 1):  # i以上のjで組み合わせを作成（自枠との組み合わせも含む）
+                wakuren_combinations.append((i, j))
+        
+        # 各レースについて処理
+        for race_idx in range(n_races):
+            # このレースの着順データを取得
+            chakujun = self.raw_data['kakutei_chakujun'][race_idx]
+            
+            # 枠番データを取得（枠連用）
+            wakuban = self.raw_data['wakuban'][race_idx] if 'wakuban' in self.raw_data else None
+            
+            # 実際の出走馬数
+            race_horse_count = int(horse_counts[race_idx])
+            
+            # NoneやNaNを大きな値に置き換えて、有効な馬だけを考慮
+            chakujun_array = np.array([
+                999 if (i >= race_horse_count or pd.isna(v) or v is None)
+                else int(v) for i, v in enumerate(chakujun)
+            ])
+            
+            # インデックスと着順のマッピングを作成
+            idx_with_chakujun = [(i, place) for i, place in enumerate(chakujun_array)]
+            
+            # 着順で並べ替え
+            idx_with_chakujun.sort(key=lambda x: x[1])
+            
+            # 上位3頭の馬インデックスを取得
+            top3_indices = [pair[0] for pair in idx_with_chakujun[:3] if pair[1] < 999]
+            
+            if len(top3_indices) >= 1:
+                # 単勝（1着の馬）
+                target_tansho[race_idx] = top3_indices[0]
+            
+            if len(top3_indices) >= 1:
+                # 複勝（3着以内の馬にフラグ）
+                for horse_idx in top3_indices:
+                    if horse_idx < max_horses:  # 範囲内であることを確認
+                        target_fukusho[race_idx, horse_idx] = 1
+            
+            if len(top3_indices) >= 2 and wakuban is not None:
+                # 枠連（1着と2着の枠番の組み合わせ）
+                frame1 = wakuban[top3_indices[0]]
+                frame2 = wakuban[top3_indices[1]]
+                
+                # NoneやNaNをチェック
+                if not (pd.isna(frame1) or pd.isna(frame2) or frame1 is None or frame2 is None):
+                    frame1, frame2 = int(frame1), int(frame2)
+                    
+                    # 枠番の順序を正規化（小さい方を先に）
+                    if frame1 > frame2:
+                        frame1, frame2 = frame2, frame1
+                    
+                    # 組み合わせのインデックスを検索
+                    try:
+                        combo_idx = wakuren_combinations.index((frame1, frame2))
+                        target_wakuren[race_idx] = combo_idx
+                    except ValueError:
+                        pass
+            
+            if len(top3_indices) >= 2:
+                # 馬連（1着と2着の馬番の組み合わせ、順不同）
+                horse1, horse2 = top3_indices[0], top3_indices[1]
+                
+                # 馬番の順序を正規化（小さい方を先に）
+                if horse1 > horse2:
+                    horse1, horse2 = horse2, horse1
+                
+                # 組み合わせのインデックスを検索
+                try:
+                    combo_idx = umaren_combinations.index((horse1, horse2))
+                    target_umaren[race_idx] = combo_idx
+                except ValueError:
+                    pass
+                
+                # 馬単（1着と2着の馬番の組み合わせ、順序あり）
+                try:
+                    combo_idx = umatan_combinations.index((top3_indices[0], top3_indices[1]))
+                    target_umatan[race_idx] = combo_idx
+                except ValueError:
+                    pass
+            
+            if len(top3_indices) >= 3:
+                # 3連複（3着以内の馬番の組み合わせ、順不同）
+                horses = sorted([top3_indices[0], top3_indices[1], top3_indices[2]])
+                try:
+                    combo_idx = sanrenpuku_combinations.index(tuple(horses))
+                    target_sanrenpuku[race_idx] = combo_idx
+                except ValueError:
+                    pass
+            
+            # ワイド（3着以内の2頭の馬の組み合わせ、順不同）
+            if len(top3_indices) >= 2:
+                for i in range(len(top3_indices)):
+                    for j in range(i+1, len(top3_indices)):
+                        horse1, horse2 = top3_indices[i], top3_indices[j]
+                        
+                        # 馬番の順序を正規化（小さい方を先に）
+                        if horse1 > horse2:
+                            horse1, horse2 = horse2, horse1
+                        
+                        try:
+                            combo_idx = umaren_combinations.index((horse1, horse2))
+                            target_wide[race_idx, combo_idx] = 1
+                        except ValueError:
+                            pass
+        
+        # 有効なターゲットがあるもののみを追加
+        if np.any(target_tansho >= 0):
+            self.raw_data['target_tansho'] = target_tansho
+            logger.info(f"単勝ターゲット作成完了: {np.sum(target_tansho >= 0)}/{n_races} レースで有効")
+        
+        if np.any(target_fukusho):
+            self.raw_data['target_fukusho'] = target_fukusho
+            logger.info(f"複勝ターゲット作成完了: {np.sum(np.any(target_fukusho, axis=1))}/{n_races} レースで有効")
+        
+        if np.any(target_wakuren >= 0):
+            self.raw_data['target_wakuren'] = target_wakuren
+            logger.info(f"枠連ターゲット作成完了: {np.sum(target_wakuren >= 0)}/{n_races} レースで有効")
+        
+        if np.any(target_umaren >= 0):
+            self.raw_data['target_umaren'] = target_umaren
+            logger.info(f"馬連ターゲット作成完了: {np.sum(target_umaren >= 0)}/{n_races} レースで有効")
+        
+        if np.any(target_wide):
+            self.raw_data['target_wide'] = target_wide
+            logger.info(f"ワイドターゲット作成完了: {np.sum(np.any(target_wide, axis=1))}/{n_races} レースで有効")
+        
+        if np.any(target_umatan >= 0):
+            self.raw_data['target_umatan'] = target_umatan
+            logger.info(f"馬単ターゲット作成完了: {np.sum(target_umatan >= 0)}/{n_races} レースで有効")
+        
+        if np.any(target_sanrenpuku >= 0):
+            self.raw_data['target_sanrenpuku'] = target_sanrenpuku
+            logger.info(f"3連複ターゲット作成完了: {np.sum(target_sanrenpuku >= 0)}/{n_races} レースで有効")

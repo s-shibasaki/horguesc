@@ -697,7 +697,7 @@ class TrifectaModel(BaseModel):
         
         Args:
             outputs: Output from forward pass containing 'logits'
-            targets: Dictionary containing 'target_trifecta' with correct combination indices
+            targets: Dictionary containing 'target_sanrentan' with correct combination indices
             
         Returns:
             torch.Tensor: Loss value
@@ -705,8 +705,8 @@ class TrifectaModel(BaseModel):
         logits = outputs['logits']
         
         # Targets should be tensor with shape [batch_size] containing the index of the correct trifecta
-        if 'target_trifecta' in targets:
-            trifecta_targets = targets['target_trifecta']
+        if 'target_sanrentan' in targets:
+            trifecta_targets = targets['target_sanrentan']
             
             # If targets aren't already on the device, move them
             if trifecta_targets.device != logits.device:
@@ -715,7 +715,7 @@ class TrifectaModel(BaseModel):
             loss = self.loss_fn(logits, trifecta_targets)
             return loss
         else:
-            logger.error("No 'target_trifecta' found in targets")
+            logger.error("No 'target_sanrentan' found in targets")
             # Return a zero loss as a fallback (helps prevent training crashes)
             return torch.tensor(0.0, device=logits.device, requires_grad=True)
     
@@ -733,16 +733,17 @@ class TrifectaModel(BaseModel):
                 - top10_accuracy: Proportion of targets in top 10 predictions
                 - top20_accuracy: Proportion of targets in top 20 predictions
                 - mean_rank: Average rank of the correct trifecta
+                - betting_results: Results from different betting strategies
         """
         metrics = {}
         
-        if 'target_trifecta' not in targets:
-            logger.warning("No 'target_trifecta' found in targets, cannot compute metrics")
+        if 'target_sanrentan' not in targets:
+            logger.warning("No 'target_sanrentan' found in targets, cannot compute metrics")
             return metrics
         
         # Get predictions and targets
         probabilities = outputs['sanrentan_probabilities']
-        trifecta_targets = targets['target_trifecta'].to(probabilities.device)
+        trifecta_targets = targets['target_sanrentan'].to(probabilities.device)
         
         # Calculate accuracy (exact match)
         _, top1_predictions = torch.topk(probabilities, k=1, dim=1)
@@ -780,5 +781,11 @@ class TrifectaModel(BaseModel):
         
         mean_rank = ranks.float().mean().item()
         metrics['mean_rank'] = mean_rank
+        
+        # TODO: Implement betting strategies and calculate their results
+        # For now, we will just return an empty dictionary for betting results
+        betting_results = {}
+        
+        metrics.update(betting_results)
         
         return metrics

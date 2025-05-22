@@ -183,6 +183,7 @@ class BaseDataset(abc.ABC):
         1. 設定ファイルで定義された数値特徴量とカテゴリカル特徴量のエンコード
         2. ターゲット変数の自動転送 (target または target_ で始まるキー)
         3. 補助データの自動転送 (AUXILIARY_KEYS に指定されたキー)
+        4. 生データの保持 (raw_ プレフィックス付きで追加)
         
         オーバーライド時のヒント:
         - 特別な処理が必要な場合は、super()._process_features()の結果に追加処理を行うことを推奨
@@ -208,6 +209,7 @@ class BaseDataset(abc.ABC):
         categorical_processed = []
         target_copied = []
         auxiliary_copied = []
+        raw_added = []
         
         logger.info(f"特徴量データ処理の開始: {len(raw_data)}個のキーを処理します")
         
@@ -222,6 +224,23 @@ class BaseDataset(abc.ABC):
                 numerical_processed.append(feature_name)
                 logger.debug(f"数値特徴量 '{feature_name}' の正規化が完了しました: "
                         f"形状={processed[feature_name].shape}, 型={processed[feature_name].dtype}")
+        
+                # 生データも保持する
+                raw_key = f"raw_{feature_name}"
+                # Object型の配列はテンソルに変換せずそのまま保持
+                if isinstance(raw_data[feature_name], np.ndarray) and raw_data[feature_name].dtype == np.dtype('O'):
+                    processed[raw_key] = raw_data[feature_name]
+                else:
+                    try:
+                        # 変換可能な場合のみテンソルに変換
+                        processed[raw_key] = torch.tensor(raw_data[feature_name]) if isinstance(raw_data[feature_name], np.ndarray) else raw_data[feature_name]
+                    except TypeError:
+                        # 変換できない場合は元の配列をそのまま保持
+                        processed[raw_key] = raw_data[feature_name]
+                        logger.debug(f"数値特徴量 '{feature_name}' の生データをテンソルに変換できないため、元の形式で保存します")
+                
+                processed_keys.add(raw_key)
+                raw_added.append(raw_key)
 
         # カテゴリカル特徴量の処理
         for feature_name in categorical_features:
@@ -234,15 +253,42 @@ class BaseDataset(abc.ABC):
                 categorical_processed.append(feature_name)
                 logger.debug(f"カテゴリカル特徴量 '{feature_name}' のエンコードが完了しました: "
                         f"形状={processed[feature_name].shape}, 型={processed[feature_name].dtype}")
-            
+        
+                # 生データも保持する
+                raw_key = f"raw_{feature_name}"
+                # Object型の配列はテンソルに変換せずそのまま保持
+                if isinstance(raw_data[feature_name], np.ndarray) and raw_data[feature_name].dtype == np.dtype('O'):
+                    processed[raw_key] = raw_data[feature_name]
+                else:
+                    try:
+                        # 変換可能な場合のみテンソルに変換
+                        processed[raw_key] = torch.tensor(raw_data[feature_name]) if isinstance(raw_data[feature_name], np.ndarray) else raw_data[feature_name]
+                    except TypeError:
+                        # 変換できない場合は元の配列をそのまま保持
+                        processed[raw_key] = raw_data[feature_name]
+                        logger.debug(f"カテゴリカル特徴量 '{feature_name}' の生データをテンソルに変換できないため、元の形式で保存します")
+                
+                processed_keys.add(raw_key)
+                raw_added.append(raw_key)
+    
         # ターゲット変数をそのままコピー (target または target_で始まるキー)
         for key, value in raw_data.items():
             if key == 'target' or key.startswith('target_'):
                 if isinstance(value, np.ndarray):
                     logger.debug(f"ターゲット変数 '{key}' をテンソルに変換します (原型: {value.dtype}, 形状: {value.shape})")
-                    processed[key] = torch.tensor(value)
-                    logger.debug(f"ターゲット変数 '{key}' の変換が完了しました: "
-                            f"形状={processed[key].shape}, 型={processed[key].dtype}")
+                    if value.dtype == np.dtype('O'):
+                        # Object型の場合はテンソル変換をスキップ
+                        processed[key] = value
+                        logger.debug(f"ターゲット変数 '{key}' はnumpy.object_型のため、NumPy配列のまま保持します")
+                    else:
+                        try:
+                            processed[key] = torch.tensor(value)
+                            logger.debug(f"ターゲット変数 '{key}' の変換が完了しました: "
+                                    f"形状={processed[key].shape}, 型={processed[key].dtype}")
+                        except TypeError:
+                            # 変換できない場合はNumPy配列のまま
+                            processed[key] = value
+                            logger.debug(f"ターゲット変数 '{key}' はテンソルに変換できないため、NumPy配列のまま保持します")
                 else:
                     # NumPy配列でない場合はそのまま保存
                     logger.debug(f"ターゲット変数 '{key}' はNumPy配列でないため、そのままコピーします (型: {type(value).__name__})")
@@ -256,20 +302,20 @@ class BaseDataset(abc.ABC):
             if key not in processed_keys:
                 # NumPy配列はテンソルに変換（対応可能な型のみ）
                 if isinstance(value, np.ndarray):
-                    try:
-                        # NumPy object配列はテンソルに変換せずそのまま保持
-                        if value.dtype == np.dtype('O'):
-                            logger.debug(f"補助データ '{key}' はnumpy.object_型のため、NumPy配列のまま保持します")
-                            processed[key] = value
-                        else:
+                    # NumPy object配列はテンソルに変換せずそのまま保持
+                    if value.dtype == np.dtype('O'):
+                        logger.debug(f"補助データ '{key}' はnumpy.object_型のため、NumPy配列のまま保持します")
+                        processed[key] = value
+                    else:
+                        try:
                             logger.debug(f"補助データ '{key}' をテンソルに変換します (原型: {value.dtype}, 形状: {value.shape})")
                             processed[key] = torch.tensor(value)
                             logger.debug(f"補助データ '{key}' の変換が完了しました: "
                                     f"形状={processed[key].shape}, 型={processed[key].dtype}")
-                    except TypeError:
-                        # 変換できない場合はNumPy配列のまま保持
-                        logger.debug(f"補助データ '{key}' はテンソルに変換できないため、配列のまま保持します")
-                        processed[key] = value
+                        except TypeError:
+                            # 変換できない場合はNumPy配列のまま保持
+                            logger.debug(f"補助データ '{key}' はテンソルに変換できないため、配列のまま保持します")
+                            processed[key] = value
                 else:
                     # その他のデータ型はそのままコピー
                     logger.debug(f"補助データ '{key}' はNumPy配列でないため、そのままコピーします (型: {type(value).__name__})")
@@ -278,7 +324,7 @@ class BaseDataset(abc.ABC):
         
         # 処理結果の詳細をログに記録
         logger.info(f"処理された特徴量: 数値 {len(numerical_processed)}個, カテゴリ {len(categorical_processed)}個, "
-                    f"ターゲット {len(target_copied)}個, 補助データ {len(auxiliary_copied)}個")
+                    f"ターゲット {len(target_copied)}個, 補助データ {len(auxiliary_copied)}個, 生データ {len(raw_added)}個")
         
         # 処理した特徴量の詳細をログに出力
         if numerical_processed:
@@ -292,6 +338,9 @@ class BaseDataset(abc.ABC):
         
         if auxiliary_copied:
             logger.info(f"コピー/変換された補助データ: {', '.join(auxiliary_copied)}")
+            
+        if raw_added:
+            logger.info(f"追加された生データ: {', '.join(raw_added)}")
         
         # メモリ使用状況の概要を出力
         total_memory = 0

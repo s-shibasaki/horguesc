@@ -168,30 +168,20 @@ class MultitaskTrainer:
                 
                 # Create inputs and targets dictionaries
                 inputs = {}
-                targets = {}
                 
                 # Separate inputs and targets based on their names
                 for key, value in batch.items():
-                    if key == 'target' or key.startswith('target_') or key.startswith('odds_'):
-                        # Target data - these should already be tensors from BaseDataset
-                        if isinstance(value, torch.Tensor):
-                            targets[key] = value.to(self.device)
-                        else:
-                            # For non-tensor targets, just pass them as-is
-                            targets[key] = value
+                    if isinstance(value, torch.Tensor):
+                        inputs[key] = value.to(self.device)
                     else:
-                        # Input data
-                        if isinstance(value, torch.Tensor):
-                            inputs[key] = value.to(self.device)
-                        else:
-                            # For non-tensor inputs, just pass them as-is
-                            inputs[key] = value
+                        # For non-tensor inputs, just pass them as-is
+                        inputs[key] = value
                 
                 # Forward pass
                 outputs = model(inputs)
                 
                 # Compute loss
-                loss = model.compute_loss(outputs, targets)
+                loss = model.compute_loss(outputs, inputs)
                 
                 # Weight the loss (optional)
                 try:
@@ -250,7 +240,7 @@ class MultitaskTrainer:
                 
                 # Process all validation data using batches
                 all_outputs = {}
-                all_targets = {}
+                all_inputs = {}
                 
                 # Continue fetching batches until we've processed all validation data
                 while True:
@@ -258,24 +248,14 @@ class MultitaskTrainer:
                     
                     # Create inputs and targets dictionaries
                     batch_inputs = {}
-                    batch_targets = {}
                     
                     # Separate inputs and targets
                     for key, value in batch_data.items():
-                        if key == 'target' or key.startswith('target_') or key.startswith('odds_'):
-                            # Target data - these should already be tensors from BaseDataset
-                            if isinstance(value, torch.Tensor):
-                                batch_targets[key] = value.to(self.device)
-                            else:
-                                # For non-tensor targets, just pass them as-is
-                                batch_targets[key] = value
+                        if isinstance(value, torch.Tensor):
+                            batch_inputs[key] = value.to(self.device)
                         else:
-                            # Input data
-                            if isinstance(value, torch.Tensor):
-                                batch_inputs[key] = value.to(self.device)
-                            else:
-                                # For non-tensor inputs, just pass them as-is
-                                batch_inputs[key] = value
+                            # For non-tensor inputs, just pass them as-is
+                            batch_inputs[key] = value
                     
                     # Forward pass
                     batch_outputs = model(batch_inputs)
@@ -286,10 +266,10 @@ class MultitaskTrainer:
                             all_outputs[key] = []
                         all_outputs[key].append(value)
                     
-                    for key, value in batch_targets.items():
-                        if key not in all_targets:
-                            all_targets[key] = []
-                        all_targets[key].append(value)
+                    for key, value in batch_inputs.items():
+                        if key not in all_inputs:
+                            all_inputs[key] = []
+                        all_inputs[key].append(value)
                     
                     # If this was the last batch, break the loop
                     if is_last_batch:
@@ -303,19 +283,19 @@ class MultitaskTrainer:
                     else:
                         combined_outputs[key] = values
                 
-                combined_targets = {}
-                for key, values in all_targets.items():
+                combined_inputs = {}
+                for key, values in all_inputs.items():
                     if isinstance(values[0], torch.Tensor):
-                        combined_targets[key] = torch.cat(values, dim=0)
+                        combined_inputs[key] = torch.cat(values, dim=0)
                     else:
-                        combined_targets[key] = values
+                        combined_inputs[key] = values
                 
                 # Compute loss
-                loss = model.compute_loss(combined_outputs, combined_targets)
+                loss = model.compute_loss(combined_outputs, combined_inputs)
                 task_metrics[task_name] = {'loss': loss.item()}
                 
                 # Additional metrics could be computed here
-                self._compute_additional_metrics(task_name, combined_outputs, combined_targets, task_metrics)
+                self._compute_additional_metrics(task_name, combined_outputs, combined_inputs, task_metrics)
         
         # Log validation results
         logger.info(f"Validation after epoch {epoch+1}:")
@@ -325,14 +305,14 @@ class MultitaskTrainer:
             
         return task_metrics
     
-    def _compute_additional_metrics(self, task_name, outputs, targets, metrics_dict):
+    def _compute_additional_metrics(self, task_name, outputs, inputs, metrics_dict):
         """Compute additional metrics for validation."""
         # Get the model for this task
         model = self.models[task_name]
         
         # Call the model's compute_metrics method if it exists
         if hasattr(model, 'compute_metrics'):
-            task_metrics = model.compute_metrics(outputs, targets)
+            task_metrics = model.compute_metrics(outputs, inputs)
             metrics_dict[task_name].update(task_metrics)
     
     def save_models(self, path_prefix=None):

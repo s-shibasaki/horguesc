@@ -79,8 +79,9 @@ class TrifectaModel(BaseModel):
         Returns:
             dict: Contains:
                 - 'logits': Raw scores for each trifecta combination [batch_size, num_combinations]
-                - 'probabilities': Probabilities for each combination [batch_size, num_combinations]
+                - 'sanrentan_probabilities': Probabilities for each trifecta combination [batch_size, num_combinations]
                 - 'horse_performances': Performance vectors for each horse [batch_size, max_horses, perf_dim]
+                - Additional bet type probabilities from compute_bet_probabilities
         """
         batch_size = next(iter(inputs.values())).shape[0]
         max_horses = next(iter(inputs.values())).shape[1]
@@ -119,11 +120,161 @@ class TrifectaModel(BaseModel):
         # Apply softmax to get probabilities
         trifecta_probs = F.softmax(trifecta_scores, dim=1)
         
-        return {
+        # Get wakuban (horse numbers) from inputs if available
+        wakuban = inputs.get('raw_wakuban', None)
+        
+        # Compute probabilities for different bet types
+        bet_probabilities = self.compute_bet_probabilities(trifecta_probs, max_horses, wakuban)
+        
+        # Create result dictionary
+        results = {
             'logits': trifecta_scores,
-            'probabilities': trifecta_probs,
+            'sanrentan_probabilities': trifecta_probs,
             'horse_performances': horse_performances
         }
+        
+        # Add all bet probabilities to the results
+        results.update(bet_probabilities)
+        
+        return results
+    
+    def compute_bet_probabilities(self, trifecta_probs, max_horses, wakuban=None):
+        """Compute probabilities for different bet types using trifecta probabilities.
+        
+        Args:
+            trifecta_probs: Trifecta probabilities [batch_size, num_combinations]
+            max_horses: Maximum number of horses per race
+            wakuban: Optional tensor of horse numbers [batch_size, max_horses]
+                    If not provided, assumes horses are numbered 1 to max_horses
+        
+        Returns:
+            dict: Dictionary containing probabilities for different bet types
+        """
+        batch_size = trifecta_probs.shape[0]
+        device = trifecta_probs.device
+        
+        # Create the mapping from sanrentan to sanrenpuku
+        sanrentan_to_sanrenpuku = self._create_sanrentan_to_sanrenpuku_mapping(
+            max_horses, batch_size, device
+        )
+        
+        # Calculate sanrenpuku (trio) probabilities
+        # Shape: [batch_size, n_sanrenpuku]
+        sanrenpuku_probs = torch.bmm(sanrentan_to_sanrenpuku, trifecta_probs.unsqueeze(2)).squeeze(2)
+        
+        # Create the mapping from sanrentan to umatan (exacta)
+        sanrentan_to_umatan = self._create_sanrentan_to_umatan_mapping(
+            max_horses, batch_size, device
+        )
+        
+        # Calculate umatan (exacta) probabilities
+        # Shape: [batch_size, n_umatan]
+        umatan_probs = torch.bmm(sanrentan_to_umatan, trifecta_probs.unsqueeze(2)).squeeze(2)
+        
+        # Return bet probabilities
+        bet_probabilities = {
+            'sanrenpuku_probabilities': sanrenpuku_probs,
+            'umatan_probabilities': umatan_probs
+        }
+        
+        return bet_probabilities
+    
+    def _create_sanrentan_to_umatan_mapping(self, max_horses, batch_size, device):
+        """Create mapping from sanrentan (ordered trifecta) to umatan (exacta).
+        
+        This mapping is used to convert trifecta probabilities to exacta probabilities.
+        An exacta bet considers only the first and second place finishers in order.
+        
+        Args:
+            max_horses: Maximum number of horses per race
+            batch_size: Number of races in the batch
+            device: Device to use for computation
+            
+        Returns:
+            torch.Tensor: Mapping matrix [batch_size, n_umatan, n_sanrentan]
+                          Where mapping[b, i, j] = 1 if sanrentan j projects to umatan i
+        """
+        # Generate all possible trifecta combinations (1-indexed horse numbers)
+        sanrentan_combinations = list(itertools.permutations(range(1, max_horses + 1), 3))
+        # Convert to tensor: [n_sanrentan, 3]
+        sanrentan_tensor = torch.tensor(sanrentan_combinations, device=device)
+        
+        # Generate all possible exacta combinations (1-indexed horse numbers)
+        umatan_combinations = list(itertools.permutations(range(1, max_horses + 1), 2))
+        # Convert to tensor: [n_umatan, 2]
+        umatan_tensor = torch.tensor(umatan_combinations, device=device)
+        
+        # Extract first two positions from sanrentan combinations
+        # Shape: [n_sanrentan, 2]
+        sanrentan_first_two = sanrentan_tensor[:, :2]
+        
+        # Reshape for broadcasting comparison
+        # Shape: [n_umatan, 1, 2]
+        umatan_expanded = umatan_tensor.unsqueeze(1)
+        # Shape: [1, n_sanrentan, 2]
+        sanrentan_first_two_expanded = sanrentan_first_two.unsqueeze(0)
+        
+        # Compare each umatan with each sanrentan's first two positions
+        # Result shape: [n_umatan, n_sanrentan, 2]
+        matches = umatan_expanded == sanrentan_first_two_expanded
+        
+        # An umatan matches a sanrentan if both horses match in the same order
+        # Shape: [n_umatan, n_sanrentan]
+        all_match = matches.all(dim=2).float()
+        
+        # Expand for batch dimension
+        # Shape: [batch_size, n_umatan, n_sanrentan]
+        sanrentan_to_umatan = all_match.unsqueeze(0).expand(batch_size, -1, -1)
+        
+        return sanrentan_to_umatan
+    
+    def _create_sanrentan_to_sanrenpuku_mapping(self, max_horses, batch_size, device):
+        """Create mapping from sanrentan (ordered trifecta) to sanrenpuku (unordered trio).
+        
+        This mapping is used to convert ordered trifecta probabilities to unordered trio probabilities.
+        
+        Args:
+            max_horses: Maximum number of horses per race
+            batch_size: Number of races in the batch
+            device: Device to use for computation
+            
+        Returns:
+            torch.Tensor: Mapping matrix [batch_size, n_sanrenpuku, n_sanrentan]
+                          Where mapping[b, i, j] = 1 if sanrentan j belongs to sanrenpuku i
+        """
+        # Generate all possible trifecta combinations (1-indexed horse numbers)
+        sanrentan_combinations = list(itertools.permutations(range(1, max_horses + 1), 3))
+        # Convert to tensor: [n_sanrentan, 3]
+        sanrentan_tensor = torch.tensor(sanrentan_combinations, device=device)
+        
+        # Generate all possible trio combinations (1-indexed horse numbers)
+        sanrenpuku_combinations = list(itertools.combinations(range(1, max_horses + 1), 3))
+        # Convert to tensor: [n_sanrenpuku, 3]
+        sanrenpuku_tensor = torch.tensor(sanrenpuku_combinations, device=device)
+        
+        # Sort each sanrentan combination to make comparison easier
+        # Shape: [n_sanrentan, 3]
+        sorted_sanrentan = torch.sort(sanrentan_tensor, dim=1)[0]
+        
+        # Reshape for broadcasting comparison
+        # Shape: [n_sanrenpuku, 1, 3]
+        sanrenpuku_expanded = sanrenpuku_tensor.unsqueeze(1)
+        # Shape: [1, n_sanrentan, 3]
+        sorted_sanrentan_expanded = sorted_sanrentan.unsqueeze(0)
+        
+        # Compare each sanrenpuku with each sorted sanrentan
+        # Result shape: [n_sanrenpuku, n_sanrentan, 3]
+        matches = sanrenpuku_expanded == sorted_sanrentan_expanded
+        
+        # A sanrentan maps to a sanrenpuku if all 3 horses match (regardless of order)
+        # Shape: [n_sanrenpuku, n_sanrentan]
+        all_match = matches.all(dim=2).float()
+        
+        # Expand for batch dimension
+        # Shape: [batch_size, n_sanrenpuku, n_sanrentan]
+        sanrentan_to_sanrenpuku = all_match.unsqueeze(0).expand(batch_size, -1, -1)
+        
+        return sanrentan_to_sanrenpuku
     
     def _compute_trifecta_scores(self, horse_performances, max_horses, horse_counts):
         """Compute scores for all possible trifecta combinations.
@@ -256,7 +407,7 @@ class TrifectaModel(BaseModel):
             return metrics
         
         # Get predictions and targets
-        probabilities = outputs['probabilities']
+        probabilities = outputs['sanrentan_probabilities']
         trifecta_targets = targets['target_trifecta'].to(probabilities.device)
         
         # Calculate accuracy (exact match)

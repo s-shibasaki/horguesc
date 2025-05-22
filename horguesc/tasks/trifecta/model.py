@@ -189,15 +189,88 @@ class TrifectaModel(BaseModel):
         # Shape: [batch_size, max_horses]
         tansho_probs = torch.bmm(sanrentan_to_tansho, trifecta_probs.unsqueeze(2)).squeeze(2)
         
+        # Create the mapping from sanrentan to fukusho (place)
+        sanrentan_to_fukusho = self._create_sanrentan_to_fukusho_mapping(
+            max_horses, batch_size, device
+        )
+        
+        # Calculate fukusho (place) probabilities
+        # Shape: [batch_size, max_horses]
+        fukusho_probs = torch.bmm(sanrentan_to_fukusho, trifecta_probs.unsqueeze(2)).squeeze(2)
+        
+        # Create the mapping from sanrentan to wide (rumor)
+        sanrentan_to_wide = self._create_sanrentan_to_wide_mapping(
+            max_horses, batch_size, device
+        )
+        
+        # Calculate wide (rumor) probabilities
+        # Shape: [batch_size, n_wide]
+        wide_probs = torch.bmm(sanrentan_to_wide, trifecta_probs.unsqueeze(2)).squeeze(2)
+        
         # Return bet probabilities
         bet_probabilities = {
             'sanrenpuku_probabilities': sanrenpuku_probs,
             'umatan_probabilities': umatan_probs,
             'umaren_probabilities': umaren_probs,
-            'tansho_probabilities': tansho_probs
+            'tansho_probabilities': tansho_probs,
+            'fukusho_probabilities': fukusho_probs,
+            'wide_probabilities': wide_probs
         }
         
         return bet_probabilities
+    
+    def _create_sanrentan_to_fukusho_mapping(self, max_horses, batch_size, device):
+        """Create mapping from sanrentan (ordered trifecta) to fukusho (place).
+        
+        This mapping is used to convert trifecta probabilities to place bet probabilities.
+        A fukusho (place) bet wins if the horse finishes in one of the top positions
+        (typically top 3 for races with 8+ horses).
+        
+        Args:
+            max_horses: Maximum number of horses per race
+            batch_size: Number of races in the batch
+            device: Device to use for computation
+            
+        Returns:
+            torch.Tensor: Mapping matrix [batch_size, max_horses, n_sanrentan]
+                          Where mapping[b, i, j] = 1 if sanrentan j has horse i+1 in top positions
+        """
+        # Generate all possible trifecta combinations (1-indexed horse numbers)
+        sanrentan_combinations = list(itertools.permutations(range(1, max_horses + 1), 3))
+        # Convert to tensor: [n_sanrentan, 3]
+        sanrentan_tensor = torch.tensor(sanrentan_combinations, device=device)
+        
+        # Extract horses in top 3 positions from sanrentan combinations
+        # Shape: [n_sanrentan, 3]
+        top_three_horses = sanrentan_tensor
+        
+        # Create a mapping matrix of shape [max_horses, n_sanrentan]
+        # We'll use one-hot encoding combined with comparison operations
+        
+        # First create a range tensor representing all horse numbers (1-indexed)
+        horse_indices = torch.arange(1, max_horses + 1, device=device).unsqueeze(1)  # [max_horses, 1]
+        
+        # Reshape sanrentan tensor for broadcasting
+        # Each row of this will be compared with horse_indices
+        first_pos = top_three_horses[:, 0].unsqueeze(0)   # [1, n_sanrentan]
+        second_pos = top_three_horses[:, 1].unsqueeze(0)  # [1, n_sanrentan]
+        third_pos = top_three_horses[:, 2].unsqueeze(0)   # [1, n_sanrentan]
+        
+        # A horse is in fukusho if it's in any of the top 3 positions
+        # Compare each horse number with each position
+        # Shape: [max_horses, n_sanrentan]
+        in_first = (horse_indices == first_pos).float()
+        in_second = (horse_indices == second_pos).float()  
+        in_third = (horse_indices == third_pos).float()
+        
+        # Combine the mappings with logical OR (implemented as sum + clamp)
+        mapping = torch.clamp(in_first + in_second + in_third, 0, 1)
+        
+        # Expand for batch dimension
+        # Shape: [batch_size, max_horses, n_sanrentan]
+        sanrentan_to_fukusho = mapping.unsqueeze(0).expand(batch_size, -1, -1)
+        
+        return sanrentan_to_fukusho
     
     def _create_sanrentan_to_umaren_mapping(self, max_horses, batch_size, device):
         """Create mapping from sanrentan (ordered trifecta) to umaren (unordered quinella).
@@ -381,6 +454,58 @@ class TrifectaModel(BaseModel):
         sanrentan_to_tansho = mapping.unsqueeze(0).expand(batch_size, -1, -1)
         
         return sanrentan_to_tansho
+    
+    def _create_sanrentan_to_wide_mapping(self, max_horses, batch_size, device):
+        """Create mapping from sanrentan (ordered trifecta) to wide (rumor).
+        
+        This mapping is used to convert trifecta probabilities to wide bet probabilities.
+        A wide bet wins if the two selected horses both finish in the top positions
+        (typically top 3 for races with 7+ horses).
+        
+        Args:
+            max_horses: Maximum number of horses per race
+            batch_size: Number of races in the batch
+            device: Device to use for computation
+            
+        Returns:
+            torch.Tensor: Mapping matrix [batch_size, n_wide, n_sanrentan]
+                          Where mapping[b, i, j] = 1 if sanrentan j has both horses from wide i in top positions
+        """
+        # Generate all possible trifecta combinations (1-indexed horse numbers)
+        sanrentan_combinations = list(itertools.permutations(range(1, max_horses + 1), 3))
+        # Convert to tensor: [n_sanrentan, 3]
+        sanrentan_tensor = torch.tensor(sanrentan_combinations, device=device)
+        
+        # Generate all possible wide combinations (1-indexed horse numbers)
+        wide_combinations = list(itertools.combinations(range(1, max_horses + 1), 2))
+        # Convert to tensor: [n_wide, 2]
+        wide_tensor = torch.tensor(wide_combinations, device=device)
+        
+        # Extract horses in top 3 positions from sanrentan combinations
+        # Shape: [n_sanrentan, 3]
+        top_three_horses = sanrentan_tensor
+        
+        # Reshape for broadcasting
+        # Shape: [n_wide, 1, 2]
+        wide_pairs = wide_tensor.unsqueeze(1)
+        
+        # Check if first horse in wide pair is in top 3
+        # Shape: [n_wide, n_sanrentan]
+        first_in_top3 = (wide_pairs[:, :, 0:1] == top_three_horses.unsqueeze(0)).any(dim=2)
+        
+        # Check if second horse in wide pair is in top 3
+        # Shape: [n_wide, n_sanrentan]
+        second_in_top3 = (wide_pairs[:, :, 1:2] == top_three_horses.unsqueeze(0)).any(dim=2)
+        
+        # A wide bet wins if both horses are in top 3
+        # Shape: [n_wide, n_sanrentan]
+        both_in_top3 = (first_in_top3 & second_in_top3).float()
+        
+        # Expand for batch dimension
+        # Shape: [batch_size, n_wide, n_sanrentan]
+        sanrentan_to_wide = both_in_top3.unsqueeze(0).expand(batch_size, -1, -1)
+        
+        return sanrentan_to_wide
     
     def _compute_trifecta_scores(self, horse_performances, max_horses, horse_counts):
         """Compute scores for all possible trifecta combinations.

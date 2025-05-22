@@ -826,7 +826,7 @@ class TrifectaModel(BaseModel):
                 race_ids = [f'race_{i}' for i in range(batch_size)]
             
             # Initialize simulator
-            simulator = BettingSimulator()
+            simulator = BettingSimulator(config=self.config)
             simulator.add_default_strategies()
             
             # Set common data
@@ -836,9 +836,6 @@ class TrifectaModel(BaseModel):
                 race_results=race_results,
                 race_ids=race_ids
             )
-            
-            # Run simulations for all strategies
-            betting_results = simulator.simulate()
             
             # Generate capital trend visualization path based on epoch and timestamp
             from datetime import datetime
@@ -854,17 +851,8 @@ class TrifectaModel(BaseModel):
             
             capital_trend_path = os.path.join(vis_dir, filename)
             
-            # Generate capital trend visualization
-            try:
-                simulator.save_capital_trend(
-                    betting_results, 
-                    output_path=capital_trend_path,
-                    figsize=(12, 8),
-                    initial_capital=100000
-                )
-                logger.info(f"資金推移グラフを {capital_trend_path} に保存しました")
-            except Exception as e:
-                logger.error(f"資金推移グラフの保存中にエラーが発生しました: {e}")
+            # Run simulations for all strategies
+            betting_results = simulator.simulate(capital_trend_path=capital_trend_path)
             
             # Convert results to a more compact format for metrics
             betting_metrics = {}

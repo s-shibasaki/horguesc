@@ -300,10 +300,48 @@ class MultitaskTrainer:
         # Log validation results
         logger.info(f"Validation after epoch {epoch+1}:")
         for task_name, metrics in task_metrics.items():
-            metrics_str = ", ".join(f"{k}: {v:.4f}" for k, v in metrics.items())
-            logger.info(f"  {task_name}: {metrics_str}")
+            # Flatten nested metrics with dot notation
+            flat_metrics = self._flatten_metrics_dict(metrics)
             
+            # Format the metrics string
+            metrics_parts = []
+            for k, v in flat_metrics.items():
+                if isinstance(v, (int, float)):
+                    # Format numbers with 4 decimal places
+                    metrics_parts.append(f"{k}: {v:.4f}")
+                else:
+                    # Handle other types
+                    metrics_parts.append(f"{k}: {v}")
+            
+            metrics_str = ", ".join(metrics_parts)
+            logger.info(f"  {task_name}: {metrics_str}")
+    
         return task_metrics
+    
+    def _flatten_metrics_dict(self, metrics_dict, parent_key=''):
+        """Flatten a nested metrics dictionary using dot notation.
+        
+        Args:
+            metrics_dict: The nested metrics dictionary
+            parent_key: The parent key prefix (used for recursion)
+            
+        Returns:
+            dict: Flattened metrics dictionary
+        """
+        flat_metrics = {}
+        
+        for k, v in metrics_dict.items():
+            new_key = f"{parent_key}.{k}" if parent_key else k
+            
+            if isinstance(v, dict):
+                # Recursively flatten nested dictionaries
+                nested_flat = self._flatten_metrics_dict(v, new_key)
+                flat_metrics.update(nested_flat)
+            else:
+                # Add the leaf node
+                flat_metrics[new_key] = v
+        
+        return flat_metrics
     
     def _compute_additional_metrics(self, task_name, outputs, inputs, metrics_dict):
         """Compute additional metrics for validation."""

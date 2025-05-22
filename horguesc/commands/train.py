@@ -185,7 +185,7 @@ def run(config):
         if final_metrics:
             logger.info("トレーニングの最終結果:")
             for task_name, metrics in final_metrics.items():
-                metrics_str = ", ".join(f"{k}: {v:.4f}" for k, v in metrics.items())
+                metrics_str = ", ".join(f"{k}: {v:.4f}" if isinstance(v, (int, float)) else f"{k}: {v}" for k, v in metrics.items())
                 logger.info(f"  {task_name}: {metrics_str}")
 
         logger.info("トレーニングが正常に完了しました")

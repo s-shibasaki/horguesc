@@ -20,6 +20,10 @@ colorama==0.4.6
     #   pytest
 comm==0.2.2
     # via ipykernel
+contourpy==1.3.2
+    # via matplotlib
+cycler==0.12.1
+    # via matplotlib
 debugpy==1.8.14
     # via ipykernel
 decorator==5.2.1
@@ -30,6 +34,8 @@ executing==2.2.0
     # via stack-data
 filelock==3.18.0
     # via torch
+fonttools==4.58.0
+    # via matplotlib
 fsspec==2025.3.2
     # via torch
 iniconfig==2.1.0
@@ -50,8 +56,12 @@ jupyter-core==5.7.2
     # via
     #   ipykernel
     #   jupyter-client
+kiwisolver==1.4.8
+    # via matplotlib
 markupsafe==3.0.2
     # via jinja2
+matplotlib==3.10.3
+    # via -r .\requirements.in
 matplotlib-inline==0.1.7
     # via
     #   ipykernel
@@ -64,6 +74,8 @@ networkx==3.4.2
     # via torch
 numpy==2.2.5
     # via
+    #   contourpy
+    #   matplotlib
     #   pandas
     #   torchvision
 openpyxl==3.1.5
@@ -72,6 +84,7 @@ packaging==25.0
     # via
     #   build
     #   ipykernel
+    #   matplotlib
     #   pyinstaller
     #   pyinstaller-hooks-contrib
     #   pytest
@@ -82,7 +95,9 @@ parso==0.8.4
 pefile==2023.2.7
     # via pyinstaller
 pillow==11.2.1
-    # via torchvision
+    # via
+    #   matplotlib
+    #   torchvision
 pip-tools==7.4.1
     # via -r .\requirements.in
 platformdirs==4.3.8
@@ -105,6 +120,8 @@ pyinstaller==6.13.0
     # via -r .\requirements.in
 pyinstaller-hooks-contrib==2025.3
     # via pyinstaller
+pyparsing==3.2.3
+    # via matplotlib
 pyproject-hooks==1.2.0
     # via
     #   build
@@ -114,6 +131,7 @@ pytest==8.3.5
 python-dateutil==2.9.0.post0
     # via
     #   jupyter-client
+    #   matplotlib
     #   pandas
 pytz==2025.2
     # via pandas

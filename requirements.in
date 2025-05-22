@@ -8,3 +8,4 @@ pip-tools
 pandas
 openpyxl
 ipykernel
+matplotlib

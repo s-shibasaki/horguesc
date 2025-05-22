@@ -733,7 +733,7 @@ class TrifectaModel(BaseModel):
                 - top10_accuracy: Proportion of targets in top 10 predictions
                 - top20_accuracy: Proportion of targets in top 20 predictions
                 - mean_rank: Average rank of the correct trifecta
-                - betting_results: Results from different betting strategies
+                - betting_metrics: Performance metrics for different betting strategies
         """
         metrics = {}
         
@@ -782,10 +782,77 @@ class TrifectaModel(BaseModel):
         mean_rank = ranks.float().mean().item()
         metrics['mean_rank'] = mean_rank
         
-        # TODO: Implement betting strategies and calculate their results
-        # For now, we will just return an empty dictionary for betting results
-        betting_results = {}
-        
-        metrics.update(betting_results)
-        
+        # Run betting simulations if we have odds data
+        if any(key.startswith('odds_') for key in targets):
+            betting_metrics = self._simulate_betting_strategies(outputs, targets)
+            metrics['betting_metrics'] = betting_metrics
+    
         return metrics
+
+    def _simulate_betting_strategies(self, outputs, targets):
+        """Run betting simulations using different strategies.
+        
+        Args:
+            outputs: Model outputs containing probabilities for different bet types
+            targets: Dictionary containing odds and target (hit) information
+            
+        Returns:
+            dict: Simulation results for different betting strategies
+        """
+        try:
+            from horguesc.core.betting.simulator import BettingSimulator
+            from horguesc.core.betting.strategy import BettingStrategy
+            
+            # Check if we have the necessary data
+            has_odds = any(key.startswith('odds_') for key in targets)
+            has_targets = any(key.startswith('target_') for key in targets)
+            
+            if not (has_odds and has_targets):
+                logger.warning("Missing odds or target data, cannot run betting simulation")
+                return {}
+            
+            # Extract odds and results data
+            odds_data = {k: v for k, v in targets.items() if k.startswith('odds_')}
+            race_results = {k: v for k, v in targets.items() if k.startswith('target_')}
+            
+            # Get race IDs if available
+            race_ids = targets.get('race_ids', None)
+            if race_ids is None:
+                # Create dummy race IDs if not provided
+                batch_size = list(outputs.values())[0].shape[0]
+                race_ids = [f'race_{i}' for i in range(batch_size)]
+            
+            # Initialize simulator
+            simulator = BettingSimulator()
+            simulator.add_default_strategies()
+            
+            # Set common data
+            simulator.set_common_data(
+                model_outputs=outputs,
+                odds_data=odds_data,
+                race_results=race_results,
+                race_ids=race_ids
+            )
+            
+            # Run simulations for all strategies
+            betting_results = simulator.simulate()
+            
+            # Convert results to a more compact format for metrics
+            betting_metrics = {}
+            for strategy_name, result in betting_results.items():
+                betting_metrics[strategy_name] = {
+                    'roi': result['overall_roi'],
+                    'profit': result['total_profit'],
+                    'total_bet': result['total_bet'],
+                    'total_return': result['total_return'],
+                    'hit_rate': result['hit_rate']
+                }
+            
+            return betting_metrics
+        
+        except ImportError as e:
+            logger.warning(f"Could not import betting module: {e}")
+            return {}
+        except Exception as e:
+            logger.error(f"Error running betting simulation: {e}")
+            return {'error': str(e)}

@@ -840,29 +840,31 @@ class TrifectaModel(BaseModel):
             # Run simulations for all strategies
             betting_results = simulator.simulate()
             
-            # Create model directory path from config
-            model_dir = self.config.get('paths', 'model_dir', fallback='models/default')
+            # Generate capital trend visualization path based on epoch and timestamp
+            from datetime import datetime
             
-            # Create capital trend visualization path for this epoch
-            if epoch is not None:
-                # Create the visualization directory inside model directory if it doesn't exist
-                viz_dir = os.path.join(model_dir, 'visualizations')
-                os.makedirs(viz_dir, exist_ok=True)
-                
-                # Create capital trend file path with epoch number
-                capital_trend_path = os.path.join(viz_dir, f'capital_trend_epoch_{epoch+1}.png')
-                
-                # Generate and save capital trend visualization
-                try:
-                    simulator.save_capital_trend(
-                        betting_results, 
-                        output_path=capital_trend_path,
-                        figsize=(12, 8),
-                        initial_capital=100000
-                    )
-                    logger.info(f"Capital trend visualization for epoch {epoch+1} saved to {capital_trend_path}")
-                except Exception as e:
-                    logger.error(f"Failed to save capital trend visualization: {e}")
+            # Get visualization directory from config or use default
+            vis_dir = self.config.get('paths', 'visualization_dir', fallback='visualizations')
+            os.makedirs(vis_dir, exist_ok=True)
+            
+            # Create timestamp and epoch-based filename
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            epoch_str = f"epoch{epoch}" if epoch is not None else "inference"
+            filename = f"trifecta_capital_trend_{epoch_str}_{timestamp}.png"
+            
+            capital_trend_path = os.path.join(vis_dir, filename)
+            
+            # Generate capital trend visualization
+            try:
+                simulator.save_capital_trend(
+                    betting_results, 
+                    output_path=capital_trend_path,
+                    figsize=(12, 8),
+                    initial_capital=100000
+                )
+                logger.info(f"資金推移グラフを {capital_trend_path} に保存しました")
+            except Exception as e:
+                logger.error(f"資金推移グラフの保存中にエラーが発生しました: {e}")
             
             # Convert results to a more compact format for metrics
             betting_metrics = {}

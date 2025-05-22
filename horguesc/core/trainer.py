@@ -94,39 +94,6 @@ class MultitaskTrainer:
             
         return final_metrics
     
-    def _check_if_best_epoch(self, metrics, epoch):
-        """Check if current epoch is the best so far based on validation metrics.
-        
-        Args:
-            metrics: Current epoch metrics
-            epoch: Current epoch number
-            
-        Returns:
-            bool: True if this is the best epoch so far
-        """
-        # For initial implementation, use simple averaging of all loss values
-        avg_loss = 0
-        loss_count = 0
-        
-        for task_name, task_metrics in metrics.items():
-            if 'loss' in task_metrics:
-                avg_loss += task_metrics['loss']
-                loss_count += 1
-                
-        if loss_count == 0:
-            return False
-            
-        avg_loss = avg_loss / loss_count
-        
-        # Check if this is the best loss so far
-        if not hasattr(self, 'best_loss') or avg_loss < self.best_loss:
-            self.best_loss = avg_loss
-            self.best_epoch = epoch
-            self.best_metrics = metrics.copy()
-            return True
-            
-        return False
-    
     def _train_epoch(self, epoch):
         """Train all models for one epoch.
         

@@ -76,6 +76,12 @@ class BettingSimulator:
         
         # レース数を確認
         race_count = next(iter(model_outputs.values())).shape[0]
+        
+        # race_idsが正しく設定されているか確認
+        if race_ids is not None and len(race_ids) != race_count:
+            logger.warning(f"race_idsの数（{len(race_ids)}）がレース数（{race_count}）と一致しません。race_idsをNoneにリセットします。")
+            self.common_data['race_ids'] = None
+        
         logger.info(f"共通データをセットしました: {race_count}レース")
 
     def add_default_strategies(self) -> None:
@@ -124,6 +130,11 @@ class BettingSimulator:
         
         # レース数を取得
         race_count = next(iter(model_outputs.values())).shape[0]
+        
+        # race_ids がNoneまたは長さが不足している場合、ダミーのレースIDを生成
+        if race_ids is None or len(race_ids) < race_count:
+            race_ids = [f"Race_{i+1}" for i in range(race_count)]
+            logger.info(f"有効なrace_idsがないため、ダミーのレースIDを生成しました: Race_1〜Race_{race_count}")
         
         # 馬券明細対象のレース選択（設定値に基づく件数制限）
         if betting_details_path and self.max_bet_details_races > 0 and race_count > self.max_bet_details_races:
@@ -238,7 +249,7 @@ class BettingSimulator:
                                 if race_idx not in detail_race_indices:
                                     continue
                                 
-                                race_id = race_ids[race_idx] if race_ids else f"Race_{race_idx}"
+                                race_id = race_ids[race_idx] if race_idx < len(race_ids) else f"Race_{race_idx+1}"
                                 
                                 for bet_idx in range(proportions.size(1)):
                                     if valid_bets[race_idx, bet_idx]:
@@ -308,17 +319,20 @@ class BettingSimulator:
         
         # 馬券購入明細を保存
         if betting_details_path and all_betting_details:
-            # 全戦略の馬券購入明細を結合
-            combined_details = pd.concat(all_betting_details, ignore_index=True)
-            
-            # 拡張子からフォーマットを判断
-            ext = os.path.splitext(betting_details_path)[1].lower()
-            if ext == '.xlsx':
-                combined_details.to_excel(betting_details_path, index=False)
-            else:
-                combined_details.to_csv(betting_details_path, index=False)
+            try:
+                # 全戦略の馬券購入明細を結合
+                combined_details = pd.concat(all_betting_details, ignore_index=True)
                 
-            logger.info(f"馬券購入明細を保存しました: {betting_details_path} ({len(combined_details)}件)")
+                # 拡張子からフォーマットを判断
+                ext = os.path.splitext(betting_details_path)[1].lower()
+                if ext == '.xlsx':
+                    combined_details.to_excel(betting_details_path, index=False)
+                else:
+                    combined_details.to_csv(betting_details_path, index=False)
+                    
+                logger.info(f"馬券購入明細を保存しました: {betting_details_path} ({len(combined_details)}件)")
+            except Exception as e:
+                logger.error(f"馬券購入明細の保存中にエラーが発生しました: {e}")
         
         return results
 

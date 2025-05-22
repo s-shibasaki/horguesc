@@ -242,19 +242,49 @@ class MultitaskTrainer:
                     if is_last_batch:
                         break
                 
-                # Combine accumulated tensors
+                # Combine accumulated values based on their types
                 combined_outputs = {}
                 for key, values in all_outputs.items():
+                    if not values:  # Skip empty lists
+                        combined_outputs[key] = values
+                        continue
+                        
                     if isinstance(values[0], torch.Tensor):
+                        # For PyTorch tensors, use torch.cat
                         combined_outputs[key] = torch.cat(values, dim=0)
+                    elif isinstance(values[0], np.ndarray):
+                        # For NumPy arrays, use np.concatenate
+                        combined_outputs[key] = np.concatenate(values, axis=0)
+                    elif isinstance(values[0], list):
+                        # For lists, concatenate them
+                        combined_list = []
+                        for sublist in values:
+                            combined_list.extend(sublist)
+                        combined_outputs[key] = combined_list
                     else:
+                        # For other types, keep the list of values
                         combined_outputs[key] = values
                 
                 combined_inputs = {}
                 for key, values in all_inputs.items():
+                    if not values:  # Skip empty lists
+                        combined_inputs[key] = values
+                        continue
+                        
                     if isinstance(values[0], torch.Tensor):
+                        # For PyTorch tensors, use torch.cat
                         combined_inputs[key] = torch.cat(values, dim=0)
+                    elif isinstance(values[0], np.ndarray):
+                        # For NumPy arrays, use np.concatenate
+                        combined_inputs[key] = np.concatenate(values, axis=0)
+                    elif isinstance(values[0], list):
+                        # For lists, concatenate them
+                        combined_list = []
+                        for sublist in values:
+                            combined_list.extend(sublist)
+                        combined_inputs[key] = combined_list
                     else:
+                        # For other types, keep the list of values
                         combined_inputs[key] = values
                 
                 # Compute loss

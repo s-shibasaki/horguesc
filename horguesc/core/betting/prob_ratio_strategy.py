@@ -49,7 +49,7 @@ class ProbabilityRatioStrategy(BettingStrategy):
             self.min_odds = 1.01
             self.allocation_type = 'square'
             
-        logger.info(f"確率比戦略を初期化: 最小比率={self.min_ratio}, "
+        logger.debug(f"確率比戦略を初期化: 最小比率={self.min_ratio}, "
                    f"最小確率={self.min_probability}, "
                    f"最大オッズ={self.max_odds}, "
                    f"最小オッズ={self.min_odds}, "

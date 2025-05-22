@@ -44,7 +44,7 @@ class KellyStrategy(BettingStrategy):
             self.max_odds = 1000.0
             self.separate_budgets = False
             
-        logger.info(f"ケリー戦略を初期化: 係数={self.kelly_fraction}, "
+        logger.debug(f"ケリー戦略を初期化: 係数={self.kelly_fraction}, "
                    f"最小確率={self.min_probability}, "
                    f"最大オッズ={self.max_odds}, "
                    f"分離予算={self.separate_budgets}")

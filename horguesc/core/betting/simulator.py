@@ -28,8 +28,8 @@ class BettingSimulator:
         # 共通のメモリにあるモデル出力とオッズデータを保持
         self.common_data = {}
         
-        logger.info("BettingSimulator初期化完了")
-    
+        logger.debug("BettingSimulator初期化完了")
+
     def register_strategy(self, name: str, strategy: BettingStrategy) -> None:
         """戦略を登録する
         
@@ -38,7 +38,7 @@ class BettingSimulator:
             strategy: 戦略のインスタンス
         """
         self.strategies[name] = strategy
-        logger.info(f"戦略「{name}」を登録しました")
+        logger.debug(f"戦略「{name}」を登録しました")
     
     def add_default_strategies(self) -> None:
         """Add default strategies with relaxed thresholds for debugging"""
@@ -51,9 +51,9 @@ class BettingSimulator:
         
         kelly_strategy = KellyStrategy(self.config)
         self.register_strategy('kelly', kelly_strategy)
-        
-        logger.info("Added default strategies with relaxed thresholds for debugging")
-    
+
+        logger.debug("Added default strategies with relaxed thresholds for debugging")
+
     def set_common_data(self, model_outputs: Dict[str, torch.Tensor],
                        odds_data: Dict[str, torch.Tensor],
                        race_results: Dict[str, torch.Tensor],
@@ -99,7 +99,7 @@ class BettingSimulator:
         # 指定された戦略ごとにシミュレーション
         for name in strategy_names:
             if name in self.strategies:
-                logger.info(f"戦略「{name}」でシミュレーションを開始")
+                logger.debug(f"戦略「{name}」でシミュレーションを開始")
                 
                 # 共通データを取得
                 model_outputs = self.common_data['model_outputs']
@@ -116,86 +116,84 @@ class BettingSimulator:
                 
                 logger.info(f"戦略「{name}」のシミュレーション完了: "
                            f"ROI={strategy_result['overall_roi']:.2%}, "
-                           f"利益={strategy_result['total_profit']:,.0f}円")
+                           f"利益={strategy_result['total_profit']:,.0f}円, "
+                           f"賭け金={strategy_result['total_bet']:,.0f}円, "
+                           f"的中率={strategy_result['hit_rate']:.2%} "
+                           f"({strategy_result['hit_races']}/{strategy_result['race_count']}), "
+                           f"回収率={(strategy_result['total_return']/strategy_result['total_bet']):.2f}倍")
             else:
                 logger.warning(f"戦略「{name}」は登録されていません")
         
         return results
     
-    def to_dataframe(self, results: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
-        """シミュレーション結果をDataFrameに変換する
+    def save_capital_trend(self, results: Dict[str, Dict[str, Any]], 
+                          output_path: str = 'capital_trend.png',
+                          figsize=(12, 8),
+                          initial_capital: float = 100000) -> None:
+        """Visualize and save the capital trend over time for each strategy.
         
         Args:
-            results: simulate()の戻り値
-            
-        Returns:
-            pd.DataFrame: 結果の概要DataFrame
+            results: The simulation results from simulate()
+            output_path: Path where the image will be saved
+            figsize: Size of the figure (width, height)
+            initial_capital: Starting capital amount
         """
-        # 各戦略の結果を横に並べたDataFrameを作成
-        summary_data = []
+        # Check if detailed race results are available
+        has_race_details = all('race_results' in strategy_result and 
+                              strategy_result['race_results'] is not None 
+                              for strategy_result in results.values())
         
+        if not has_race_details:
+            logger.error("Cannot create capital trend: detailed race results are not available")
+            return
+        
+        plt.figure(figsize=figsize)
+        
+        # Plot for each strategy
         for strategy_name, result in results.items():
-            summary_data.append({
-                'strategy': strategy_name,
-                'total_bet': result['total_bet'],
-                'total_return': result['total_return'],
-                'total_profit': result['total_profit'],
-                'roi': result['overall_roi'],
-                'hit_races': result['hit_races'],
-                'race_count': result['race_count'],
-                'hit_rate': result['hit_rate']
-            })
+            race_results = result['race_results']
+            
+            # Sort race results by race_id if available to ensure chronological order
+            if all('race_id' in race for race in race_results):
+                race_results = sorted(race_results, key=lambda x: x['race_id'])
+            
+            # Calculate cumulative capital over time
+            capital = [initial_capital]
+            for race in race_results:
+                profit = race.get('profit', 0)
+                capital.append(capital[-1] + profit)
+            
+            # Plot timeline (excluding initial capital point for x-axis alignment)
+            x_values = range(len(race_results) + 1)
+            plt.plot(x_values, capital, label=strategy_name, linewidth=2, marker='o', markersize=4)
         
-        return pd.DataFrame(summary_data)
-    
-    def visualize_results(self, results: Dict[str, Dict[str, Any]], 
-                         figsize=(14, 10)) -> None:
-        """シミュレーション結果を視覚化する
+        # Add reference line for initial capital
+        plt.axhline(y=initial_capital, color='gray', linestyle='--', alpha=0.7, 
+                   label='Initial capital')
         
-        Args:
-            results: simulate()の戻り値
-            figsize: グラフのサイズ
-        """
-        fig, axs = plt.subplots(2, 2, figsize=figsize)
+        # Add chart elements
+        plt.title('Capital Trend Over Time', fontsize=16)
+        plt.xlabel('Race Number', fontsize=12)
+        plt.ylabel('Capital (JPY)', fontsize=12)
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.legend(loc='best')
         
-        # 戦略名のリスト
-        strategy_names = list(results.keys())
+        # Format y-axis as currency
+        plt.gca().yaxis.set_major_formatter(plt.matplotlib.ticker.StrMethodFormatter('{x:,.0f}'))
         
-        # 1. ROIのグラフ
-        roi_values = [results[name]['overall_roi'] * 100 for name in strategy_names]
-        axs[0, 0].bar(strategy_names, roi_values)
-        axs[0, 0].set_title('ROI (%)')
-        axs[0, 0].set_ylabel('収益率 (%)')
-        axs[0, 0].grid(axis='y', linestyle='--', alpha=0.7)
+        # Add annotations for final capital
+        for strategy_name, result in results.items():
+            race_results = result['race_results']
+            final_capital = initial_capital + result['total_profit']
+            plt.annotate(f'{final_capital:,.0f}', 
+                        xy=(len(race_results), final_capital),
+                        xytext=(10, 0), 
+                        textcoords='offset points',
+                        fontsize=10,
+                        va='center')
         
-        # 2. 総利益のグラフ
-        profit_values = [results[name]['total_profit'] for name in strategy_names]
-        axs[0, 1].bar(strategy_names, profit_values)
-        axs[0, 1].set_title('Total Profit')
-        axs[0, 1].set_ylabel('利益 (円)')
-        axs[0, 1].grid(axis='y', linestyle='--', alpha=0.7)
-        
-        # 3. 当たり率のグラフ
-        hit_rates = [results[name]['hit_rate'] * 100 for name in strategy_names]
-        axs[1, 0].bar(strategy_names, hit_rates)
-        axs[1, 0].set_title('Hit Rate (%)')
-        axs[1, 0].set_ylabel('当たり率 (%)')
-        axs[1, 0].grid(axis='y', linestyle='--', alpha=0.7)
-        
-        # 4. 賭け金と払戻金のグラフ
-        bets = [results[name]['total_bet'] for name in strategy_names]
-        returns = [results[name]['total_return'] for name in strategy_names]
-        
-        width = 0.35
-        x = np.arange(len(strategy_names))
-        axs[1, 1].bar(x - width/2, bets, width, label='Total Bet')
-        axs[1, 1].bar(x + width/2, returns, width, label='Total Return')
-        axs[1, 1].set_xticks(x)
-        axs[1, 1].set_xticklabels(strategy_names)
-        axs[1, 1].set_title('Bets vs. Returns')
-        axs[1, 1].set_ylabel('金額 (円)')
-        axs[1, 1].legend()
-        axs[1, 1].grid(axis='y', linestyle='--', alpha=0.7)
-        
+        # Save the figure
         plt.tight_layout()
-        plt.show()
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        logger.info(f"Capital trend visualization saved to {output_path}")
+        plt.close()

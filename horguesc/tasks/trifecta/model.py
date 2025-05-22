@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -719,12 +720,13 @@ class TrifectaModel(BaseModel):
             # Return a zero loss as a fallback (helps prevent training crashes)
             return torch.tensor(0.0, device=logits.device, requires_grad=True)
     
-    def compute_metrics(self, outputs, targets):
+    def compute_metrics(self, outputs, inputs, epoch=None):
         """Compute evaluation metrics for the trifecta model.
         
         Args:
             outputs: Output from forward pass
-            targets: Target values
+            inputs: Target values
+            epoch: Current epoch number (optional)
             
         Returns:
             dict: Dictionary of metrics:
@@ -737,13 +739,13 @@ class TrifectaModel(BaseModel):
         """
         metrics = {}
         
-        if 'target_sanrentan' not in targets:
+        if 'target_sanrentan' not in inputs:
             logger.warning("No 'target_sanrentan' found in targets, cannot compute metrics")
             return metrics
         
         # Get predictions and targets
         probabilities = outputs['sanrentan_probabilities']
-        trifecta_targets = targets['target_sanrentan'].to(probabilities.device)
+        trifecta_targets = inputs['target_sanrentan'].to(probabilities.device)
         
         # Calculate accuracy (exact match)
         _, top1_predictions = torch.topk(probabilities, k=1, dim=1)
@@ -783,18 +785,19 @@ class TrifectaModel(BaseModel):
         metrics['mean_rank'] = mean_rank
         
         # Run betting simulations if we have odds data
-        if any(key.startswith('odds_') for key in targets):
-            betting_metrics = self._simulate_betting_strategies(outputs, targets)
+        if any(key.startswith('odds_') for key in inputs):
+            betting_metrics = self._simulate_betting_strategies(outputs, inputs, epoch)
             metrics['betting_metrics'] = betting_metrics
-    
+
         return metrics
 
-    def _simulate_betting_strategies(self, outputs, targets):
+    def _simulate_betting_strategies(self, outputs, inputs, epoch=None):
         """Run betting simulations using different strategies.
         
         Args:
             outputs: Model outputs containing probabilities for different bet types
-            targets: Dictionary containing odds and target (hit) information
+            inputs: Dictionary containing odds and target (hit) information
+            epoch: Current epoch number (optional)
             
         Returns:
             dict: Simulation results for different betting strategies
@@ -804,19 +807,19 @@ class TrifectaModel(BaseModel):
             from horguesc.core.betting.strategy import BettingStrategy
             
             # Check if we have the necessary data
-            has_odds = any(key.startswith('odds_') for key in targets)
-            has_targets = any(key.startswith('target_') for key in targets)
+            has_odds = any(key.startswith('odds_') for key in inputs)
+            has_targets = any(key.startswith('target_') for key in inputs)
             
             if not (has_odds and has_targets):
                 logger.warning("Missing odds or target data, cannot run betting simulation")
                 return {}
             
             # Extract odds and results data
-            odds_data = {k: v for k, v in targets.items() if k.startswith('odds_')}
-            race_results = {k: v for k, v in targets.items() if k.startswith('target_')}
+            odds_data = {k: v for k, v in inputs.items() if k.startswith('odds_')}
+            race_results = {k: v for k, v in inputs.items() if k.startswith('target_')}
             
             # Get race IDs if available
-            race_ids = targets.get('race_ids', None)
+            race_ids = inputs.get('race_ids', None)
             if race_ids is None:
                 # Create dummy race IDs if not provided
                 batch_size = list(outputs.values())[0].shape[0]
@@ -836,6 +839,30 @@ class TrifectaModel(BaseModel):
             
             # Run simulations for all strategies
             betting_results = simulator.simulate()
+            
+            # Create model directory path from config
+            model_dir = self.config.get('paths', 'model_dir', fallback='models/default')
+            
+            # Create capital trend visualization path for this epoch
+            if epoch is not None:
+                # Create the visualization directory inside model directory if it doesn't exist
+                viz_dir = os.path.join(model_dir, 'visualizations')
+                os.makedirs(viz_dir, exist_ok=True)
+                
+                # Create capital trend file path with epoch number
+                capital_trend_path = os.path.join(viz_dir, f'capital_trend_epoch_{epoch+1}.png')
+                
+                # Generate and save capital trend visualization
+                try:
+                    simulator.save_capital_trend(
+                        betting_results, 
+                        output_path=capital_trend_path,
+                        figsize=(12, 8),
+                        initial_capital=100000
+                    )
+                    logger.info(f"Capital trend visualization for epoch {epoch+1} saved to {capital_trend_path}")
+                except Exception as e:
+                    logger.error(f"Failed to save capital trend visualization: {e}")
             
             # Convert results to a more compact format for metrics
             betting_metrics = {}

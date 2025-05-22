@@ -44,7 +44,7 @@ class ExpectedValueStrategy(BettingStrategy):
             self.allocation_type = 'proportional'
             self.ev_power = 1.0
             
-        logger.info(f"期待値戦略を初期化: 閾値={self.ev_threshold}, "
+        logger.debug(f"期待値戦略を初期化: 閾値={self.ev_threshold}, "
                    f"最小確率={self.min_probability}, "
                    f"配分タイプ={self.allocation_type}, "
                    f"期待値累乗係数={self.ev_power}")

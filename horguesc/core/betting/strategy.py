@@ -333,26 +333,3 @@ class BettingStrategy:
         }
         
         return results
-
-    def to_dataframe(self, results: Dict[str, Any]) -> pd.DataFrame:
-        """シミュレーション結果をDataFrameに変換する
-        
-        Args:
-            results: simulate()の戻り値
-            
-        Returns:
-            pd.DataFrame: 結果のDataFrame
-        """
-        if 'race_results' in results and results['race_results']:
-            return pd.DataFrame(results['race_results'])
-        else:
-            # レースごとの結果がない場合は全体の結果だけのDataFrameを作成
-            return pd.DataFrame([{
-                'total_bet': results['total_bet'],
-                'total_return': results['total_return'],
-                'total_profit': results['total_profit'],
-                'overall_roi': results['overall_roi'],
-                'hit_races': results['hit_races'],
-                'race_count': results['race_count'],
-                'hit_rate': results['hit_rate']
-            }])

@@ -294,9 +294,9 @@ class MultitaskTrainer:
                 loss = model.compute_loss(combined_outputs, combined_inputs)
                 task_metrics[task_name] = {'loss': loss.item()}
                 
-                # Additional metrics could be computed here
-                self._compute_additional_metrics(task_name, combined_outputs, combined_inputs, task_metrics)
-        
+                # Additional metrics could be computed here - Pass the epoch number
+                self._compute_additional_metrics(task_name, combined_outputs, combined_inputs, task_metrics, epoch)
+    
         # Log validation results
         logger.info(f"Validation after epoch {epoch+1}:")
         for task_name, metrics in task_metrics.items():
@@ -315,9 +315,9 @@ class MultitaskTrainer:
             
             metrics_str = ", ".join(metrics_parts)
             logger.info(f"  {task_name}: {metrics_str}")
-    
+
         return task_metrics
-    
+
     def _flatten_metrics_dict(self, metrics_dict, parent_key=''):
         """Flatten a nested metrics dictionary using dot notation.
         
@@ -343,14 +343,22 @@ class MultitaskTrainer:
         
         return flat_metrics
     
-    def _compute_additional_metrics(self, task_name, outputs, inputs, metrics_dict):
-        """Compute additional metrics for validation."""
+    def _compute_additional_metrics(self, task_name, outputs, inputs, metrics_dict, epoch):
+        """Compute additional metrics for validation.
+        
+        Args:
+            task_name: Name of the task
+            outputs: Model outputs
+            inputs: Model inputs
+            metrics_dict: Dictionary to store computed metrics
+            epoch: Current epoch number
+        """
         # Get the model for this task
         model = self.models[task_name]
         
         # Call the model's compute_metrics method if it exists
         if hasattr(model, 'compute_metrics'):
-            task_metrics = model.compute_metrics(outputs, inputs)
+            task_metrics = model.compute_metrics(outputs, inputs, epoch)
             metrics_dict[task_name].update(task_metrics)
     
     def save_models(self, path_prefix=None):

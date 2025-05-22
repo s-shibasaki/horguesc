@@ -171,13 +171,83 @@ class TrifectaModel(BaseModel):
         # Shape: [batch_size, n_umatan]
         umatan_probs = torch.bmm(sanrentan_to_umatan, trifecta_probs.unsqueeze(2)).squeeze(2)
         
+        # Create the mapping from sanrentan to umaren (quinella)
+        sanrentan_to_umaren = self._create_sanrentan_to_umaren_mapping(
+            max_horses, batch_size, device
+        )
+        
+        # Calculate umaren (quinella) probabilities
+        # Shape: [batch_size, n_umaren]
+        umaren_probs = torch.bmm(sanrentan_to_umaren, trifecta_probs.unsqueeze(2)).squeeze(2)
+        
+        # Create the mapping from sanrentan to tansho (win)
+        sanrentan_to_tansho = self._create_sanrentan_to_tansho_mapping(
+            max_horses, batch_size, device
+        )
+        
+        # Calculate tansho (win) probabilities
+        # Shape: [batch_size, max_horses]
+        tansho_probs = torch.bmm(sanrentan_to_tansho, trifecta_probs.unsqueeze(2)).squeeze(2)
+        
         # Return bet probabilities
         bet_probabilities = {
             'sanrenpuku_probabilities': sanrenpuku_probs,
-            'umatan_probabilities': umatan_probs
+            'umatan_probabilities': umatan_probs,
+            'umaren_probabilities': umaren_probs,
+            'tansho_probabilities': tansho_probs
         }
         
         return bet_probabilities
+    
+    def _create_sanrentan_to_umaren_mapping(self, max_horses, batch_size, device):
+        """Create mapping from sanrentan (ordered trifecta) to umaren (unordered quinella).
+        
+        This mapping is used to convert trifecta probabilities to quinella probabilities.
+        A quinella bet considers the first and second place finishers regardless of order.
+        
+        Args:
+            max_horses: Maximum number of horses per race
+            batch_size: Number of races in the batch
+            device: Device to use for computation
+            
+        Returns:
+            torch.Tensor: Mapping matrix [batch_size, n_umaren, n_sanrentan]
+                          Where mapping[b, i, j] = 1 if sanrentan j projects to umaren i
+        """
+        # Generate all possible trifecta combinations (1-indexed horse numbers)
+        sanrentan_combinations = list(itertools.permutations(range(1, max_horses + 1), 3))
+        # Convert to tensor: [n_sanrentan, 3]
+        sanrentan_tensor = torch.tensor(sanrentan_combinations, device=device)
+        
+        # Generate all possible quinella combinations (1-indexed horse numbers)
+        umaren_combinations = list(itertools.combinations(range(1, max_horses + 1), 2))
+        # Convert to tensor: [n_umaren, 2]
+        umaren_tensor = torch.tensor(umaren_combinations, device=device)
+        
+        # Extract first two positions from sanrentan combinations and sort them
+        # This ensures we match quinella (unordered first two) regardless of order
+        # Shape: [n_sanrentan, 2]
+        sanrentan_first_two = torch.sort(sanrentan_tensor[:, :2], dim=1)[0]
+        
+        # Reshape for broadcasting comparison
+        # Shape: [n_umaren, 1, 2]
+        umaren_expanded = umaren_tensor.unsqueeze(1)
+        # Shape: [1, n_sanrentan, 2]
+        sanrentan_first_two_expanded = sanrentan_first_two.unsqueeze(0)
+        
+        # Compare each umaren with each sanrentan's sorted first two positions
+        # Result shape: [n_umaren, n_sanrentan, 2]
+        matches = umaren_expanded == sanrentan_first_two_expanded
+        
+        # An umaren matches a sanrentan if both horses match (order doesn't matter)
+        # Shape: [n_umaren, n_sanrentan]
+        all_match = matches.all(dim=2).float()
+        
+        # Expand for batch dimension
+        # Shape: [batch_size, n_umaren, n_sanrentan]
+        sanrentan_to_umaren = all_match.unsqueeze(0).expand(batch_size, -1, -1)
+        
+        return sanrentan_to_umaren
     
     def _create_sanrentan_to_umatan_mapping(self, max_horses, batch_size, device):
         """Create mapping from sanrentan (ordered trifecta) to umatan (exacta).
@@ -275,6 +345,42 @@ class TrifectaModel(BaseModel):
         sanrentan_to_sanrenpuku = all_match.unsqueeze(0).expand(batch_size, -1, -1)
         
         return sanrentan_to_sanrenpuku
+    
+    def _create_sanrentan_to_tansho_mapping(self, max_horses, batch_size, device):
+        """Create mapping from sanrentan (ordered trifecta) to tansho (win).
+        
+        This mapping is used to convert trifecta probabilities to win probabilities.
+        A tansho (win) bet considers only the first place finisher.
+        
+        Args:
+            max_horses: Maximum number of horses per race
+            batch_size: Number of races in the batch
+            device: Device to use for computation
+            
+        Returns:
+            torch.Tensor: Mapping matrix [batch_size, max_horses, n_sanrentan]
+                          Where mapping[b, i, j] = 1 if sanrentan j has horse i+1 in first place
+        """
+        # Generate all possible trifecta combinations (1-indexed horse numbers)
+        sanrentan_combinations = list(itertools.permutations(range(1, max_horses + 1), 3))
+        # Convert to tensor: [n_sanrentan, 3]
+        sanrentan_tensor = torch.tensor(sanrentan_combinations, device=device)
+        
+        # Extract first position from sanrentan combinations
+        # Shape: [n_sanrentan]
+        first_place_horses = sanrentan_tensor[:, 0]
+        
+        # Create a one-hot encoding for each horse number in first place
+        # Shape: [max_horses, n_sanrentan]
+        horse_indices = torch.arange(1, max_horses + 1, device=device).unsqueeze(1)
+        first_place_expanded = first_place_horses.unsqueeze(0)
+        mapping = (horse_indices == first_place_expanded).float()
+        
+        # Expand for batch dimension
+        # Shape: [batch_size, max_horses, n_sanrentan]
+        sanrentan_to_tansho = mapping.unsqueeze(0).expand(batch_size, -1, -1)
+        
+        return sanrentan_to_tansho
     
     def _compute_trifecta_scores(self, horse_performances, max_horses, horse_counts):
         """Compute scores for all possible trifecta combinations.

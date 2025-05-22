@@ -804,7 +804,6 @@ class TrifectaModel(BaseModel):
         """
         try:
             from horguesc.core.betting.simulator import BettingSimulator
-            from horguesc.core.betting.strategy import BettingStrategy
             
             # Check if we have the necessary data
             has_odds = any(key.startswith('odds_') for key in inputs)
@@ -819,7 +818,7 @@ class TrifectaModel(BaseModel):
             race_results = {k: v for k, v in inputs.items() if k.startswith('target_')}
             
             # Get race IDs if available
-            race_ids = inputs.get('race_ids', None)
+            race_ids = inputs.get('kyoso_id', None)
             if race_ids is None:
                 # Create dummy race IDs if not provided
                 batch_size = list(outputs.values())[0].shape[0]
@@ -847,21 +846,19 @@ class TrifectaModel(BaseModel):
             # Create timestamp and epoch-based filename
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             epoch_str = f"epoch{epoch}" if epoch is not None else "inference"
-            filename = f"trifecta_capital_trend_{epoch_str}_{timestamp}.png"
             
-            capital_trend_path = os.path.join(vis_dir, filename)
-            
+            capital_trend_path = os.path.join(vis_dir, f"trifecta_capital_trend_{epoch_str}_{timestamp}.png")
+            betting_details_path = os.path.join(vis_dir, f"trifecta_betting_details_{epoch_str}_{timestamp}.xlsx")
+
             # Run simulations for all strategies
-            betting_results = simulator.simulate(capital_trend_path=capital_trend_path)
+            betting_results = simulator.simulate(capital_trend_path=capital_trend_path, betting_details_path=betting_details_path)
             
             # Convert results to a more compact format for metrics
             betting_metrics = {}
             for strategy_name, result in betting_results.items():
                 betting_metrics[strategy_name] = {
-                    'roi': result['overall_roi'],
                     'profit': result['total_profit'],
                     'total_bet': result['total_bet'],
-                    'total_return': result['total_return'],
                     'hit_rate': result['hit_rate']
                 }
             

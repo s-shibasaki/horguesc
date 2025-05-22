@@ -5,10 +5,11 @@ from horguesc.core.betting.strategies.base import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
-class ExpectedValueStrategy(BaseStrategy):
-    """期待値に基づく馬券購入戦略
+class OddsDiscrepancyStrategy(BaseStrategy):
+    """オッズと予測確率の乖離に基づく馬券購入戦略
     
-    オッズと予測確率から期待値を計算し、期待値が1.0以上の組み合わせに賭ける戦略
+    市場確率（オッズの逆数）と予測確率の乖離が大きい場合に賭ける戦略。
+    特に予測確率が市場確率よりも高い場合に購入する。
     """
     
     def __init__(self, config=None):
@@ -21,26 +22,26 @@ class ExpectedValueStrategy(BaseStrategy):
         
         # 投資比率（各レースで投入する資金の割合）
         self.base_ratio = config.getfloat(
-            'betting.strategies.expected_value', 'base_ratio', fallback=0.0003)
+            'betting.strategies.odds_discrepancy', 'base_ratio', fallback=0.0003)
         
-        # 最低期待値（この値以上の期待値がある場合のみ購入）
-        self.min_expected_value = config.getfloat(
-            'betting.strategies.expected_value', 'min_expected_value', fallback=1.5)
+        # 最低乖離（この値以上の乖離がある場合のみ購入）
+        self.min_discrepancy = config.getfloat(
+            'betting.strategies.odds_discrepancy', 'min_discrepancy', fallback=0.05)
         
-        # 最低確率閾値（この確率以上の場合のみ期待値計算を行う）
+        # 最低確率閾値（この確率以上の場合のみ乖離計算を行う）
         self.min_probability = config.getfloat(
-            'betting.strategies.expected_value', 'min_probability', fallback=0.001)
+            'betting.strategies.odds_discrepancy', 'min_probability', fallback=0.001)
         
-        # 期待値最大値（異常値を抑制）
-        self.max_expected_value = config.getfloat(
-            'betting.strategies.expected_value', 'max_expected_value', fallback=15.0)
+        # 乖離最大値（異常値を抑制）
+        self.max_discrepancy = config.getfloat(
+            'betting.strategies.odds_discrepancy', 'max_discrepancy', fallback=0.5)
         
         # 最大合計比率（レース当たりの合計投資比率の上限）
         self.max_total_bet_proportion = config.getfloat(
-            'betting.strategies.expected_value', 'max_total_bet_proportion', fallback=0.05)
+            'betting.strategies.odds_discrepancy', 'max_total_bet_proportion', fallback=0.05)
         
-        logger.debug(f"ExpectedValueStrategy initialized with base_ratio={self.base_ratio}, "
-                    f"min_expected_value={self.min_expected_value}, min_probability={self.min_probability}, "
+        logger.debug(f"OddsDiscrepancyStrategy initialized with base_ratio={self.base_ratio}, "
+                    f"min_discrepancy={self.min_discrepancy}, min_probability={self.min_probability}, "
                     f"max_total_bet_proportion={self.max_total_bet_proportion}")
     
     def _calculate_bet_proportions_impl(self, 
@@ -68,27 +69,42 @@ class ExpectedValueStrategy(BaseStrategy):
                 probabilities = model_outputs[probs_key]  # [race_count, n_combinations]
                 odds = odds_data[odds_key]  # [race_count, n_combinations]
                 
-                # 確率閾値以上の組み合わせのみ期待値計算を行う
+                # 確率閾値以上の組み合わせのみ処理
                 valid_prob_mask = probabilities > self.min_probability
                 
-                # 期待値 = 確率 * オッズ
-                expected_values = torch.zeros_like(probabilities)  # [race_count, n_combinations]
-                expected_values[valid_prob_mask] = probabilities[valid_prob_mask] * odds[valid_prob_mask]
+                # 市場確率を計算 (オッズの逆数)
+                market_probabilities = torch.zeros_like(probabilities)
+                market_probabilities[valid_prob_mask] = 1.0 / odds[valid_prob_mask]
                 
-                # 期待値が最小値以上の場合のみ購入（購入比率を設定）
+                # 正規化係数を計算（市場確率の合計が1を超える分を調整）
+                normalization_factor = torch.sum(market_probabilities, dim=1, keepdim=True)
+                # ゼロ除算を防止
+                normalization_factor = torch.where(
+                    normalization_factor > 0,
+                    normalization_factor,
+                    torch.ones_like(normalization_factor)
+                )
+                # 市場確率を正規化
+                normalized_market_probs = market_probabilities / normalization_factor
+                
+                # 乖離を計算（予測確率 - 市場確率）
+                discrepancy = probabilities - normalized_market_probs
+                
+                # 予測確率が市場確率よりも高い場合のみ検討
+                positive_discrepancy = torch.clamp(discrepancy, min=0)
+                
+                # 最小乖離以上の場合のみ購入対象とする
                 proportions = torch.zeros_like(probabilities)
-                
-                # 最低期待値以上の期待値を持つ組み合わせを選定
-                profitable_mask = expected_values >= self.min_expected_value
+                profitable_mask = positive_discrepancy >= self.min_discrepancy
                 
                 if profitable_mask.any():
-                    # 期待値を正規化（最大値で制限）
-                    capped_ev = torch.clamp(expected_values, 0, self.max_expected_value)
+                    # 乖離を正規化（最大値で制限）
+                    capped_discrepancy = torch.clamp(positive_discrepancy, 0, self.max_discrepancy)
                     
-                    # 期待値に比例した購入比率を計算（基本比率をベース）
-                    # 期待値が高いほど多く購入する
-                    proportions[profitable_mask] = self.base_ratio * (capped_ev[profitable_mask] / self.min_expected_value)
-                    
+                    # 乖離に比例した購入比率を計算（基本比率をベース）
+                    # 乖離が大きいほど多く購入する
+                    proportions[profitable_mask] = self.base_ratio * (capped_discrepancy[profitable_mask] / self.min_discrepancy)
+                
                 bet_proportions[bet_type] = proportions
 
         # 全馬券種横断で、レース毎の合計が max_total_bet_proportion を超えないように調整

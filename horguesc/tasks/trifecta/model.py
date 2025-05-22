@@ -81,7 +81,7 @@ class TrifectaModel(BaseModel):
                 - 'logits': Raw scores for each trifecta combination [batch_size, num_combinations]
                 - 'sanrentan_probabilities': Probabilities for each trifecta combination [batch_size, num_combinations]
                 - 'horse_performances': Performance vectors for each horse [batch_size, max_horses, perf_dim]
-                - Additional bet type probabilities from compute_bet_probabilities
+                - Additional bet type probabilities from compute_bet_probabilities (only in eval/inference mode)
         """
         batch_size = next(iter(inputs.values())).shape[0]
         max_horses = next(iter(inputs.values())).shape[1]
@@ -120,21 +120,28 @@ class TrifectaModel(BaseModel):
         # Apply softmax to get probabilities
         trifecta_probs = F.softmax(trifecta_scores, dim=1)
         
-        # Get wakuban (horse numbers) from inputs if available
-        wakuban = inputs.get('raw_wakuban', None)
-        
-        # Compute probabilities for different bet types
-        bet_probabilities = self.compute_bet_probabilities(trifecta_probs, max_horses, wakuban)
-        
-        # Create result dictionary
+        # Create result dictionary with essential outputs
         results = {
             'logits': trifecta_scores,
             'sanrentan_probabilities': trifecta_probs,
             'horse_performances': horse_performances
         }
         
-        # Add all bet probabilities to the results
-        results.update(bet_probabilities)
+        # Only compute additional bet probabilities in eval/inference mode
+        # This avoids unnecessary computation during training
+        if not self.training:
+            # Get wakuban (horse numbers) from inputs if available
+            wakuban = inputs.get('raw_wakuban', None)
+            
+            # Compute probabilities for different bet types
+            bet_probabilities = self.compute_bet_probabilities(trifecta_probs, max_horses, wakuban)
+            
+            # Add all bet probabilities to the results
+            results.update(bet_probabilities)
+            
+            logger.debug("Computed additional bet probabilities (eval/inference mode)")
+        else:
+            logger.debug("Skipped additional bet probabilities calculation (training mode)")
         
         return results
     
@@ -207,6 +214,16 @@ class TrifectaModel(BaseModel):
         # Shape: [batch_size, n_wide]
         wide_probs = torch.bmm(sanrentan_to_wide, trifecta_probs.unsqueeze(2)).squeeze(2)
         
+        # Create the mapping from sanrentan to wakuren (box quinella)
+        sanrentan_to_wakuren = self._create_sanrentan_to_wakuren_mapping(
+            max_horses, batch_size, device, wakuban
+        )
+        
+        # Calculate wakuren (box quinella) probabilities if we have post position info
+        if sanrentan_to_wakuren is not None:
+            # Shape: [batch_size, n_wakuren]
+            wakuren_probs = torch.bmm(sanrentan_to_wakuren, trifecta_probs.unsqueeze(2)).squeeze(2)
+        
         # Return bet probabilities
         bet_probabilities = {
             'sanrenpuku_probabilities': sanrenpuku_probs,
@@ -216,6 +233,10 @@ class TrifectaModel(BaseModel):
             'fukusho_probabilities': fukusho_probs,
             'wide_probabilities': wide_probs
         }
+        
+        # Add wakuren probabilities if we calculated them
+        if sanrentan_to_wakuren is not None:
+            bet_probabilities['wakuren_probabilities'] = wakuren_probs
         
         return bet_probabilities
     
@@ -506,6 +527,88 @@ class TrifectaModel(BaseModel):
         sanrentan_to_wide = both_in_top3.unsqueeze(0).expand(batch_size, -1, -1)
         
         return sanrentan_to_wide
+    
+    def _create_sanrentan_to_wakuren_mapping(self, max_horses, batch_size, device, wakuban=None):
+        """Create mapping from sanrentan (ordered trifecta) to wakuren (box quinella).
+    
+        Wakuren is a bet on two frames/posts (not horses) to contain the first and second finishers,
+        regardless of order. In Japanese racing, frame numbers range from 1 to 8.
+    
+        Args:
+            max_horses: Maximum number of horses per race
+            batch_size: Number of races in the batch
+            device: Device to use for computation
+            wakuban: Tensor with frame/post numbers for each horse [batch_size, max_horses]
+                    If None, returns None as wakuren probabilities can't be calculated
+        
+        Returns:
+            torch.Tensor or None: Mapping matrix [batch_size, n_wakuren, n_sanrentan]
+                                Where mapping[b, i, j] = 1 if sanrentan j projects to wakuren i
+        """
+        if wakuban is None:
+            return None
+        
+        # Move wakuban to the correct device
+        wakuban = wakuban.to(device)
+        
+        # Generate all possible trifecta combinations (1-indexed horse numbers)
+        sanrentan_combinations = list(itertools.permutations(range(1, max_horses + 1), 3))
+        # Convert to tensor: [n_sanrentan, 3]
+        sanrentan_tensor = torch.tensor(sanrentan_combinations, device=device)
+        n_sanrentan = len(sanrentan_combinations)
+        
+        # Define the maximum frame number (in Japan, typically 8)
+        max_frame = 8
+        
+        # Generate all possible wakuren combinations (frame pairs including same frame)
+        wakuren_combinations = []
+        for i in range(1, max_frame + 1):
+            for j in range(i, max_frame + 1):  # Start from i to avoid duplicates
+                wakuren_combinations.append((i, j))
+    
+        # Convert to tensor: [n_wakuren, 2]
+        wakuren_tensor = torch.tensor(wakuren_combinations, device=device)
+        n_wakuren = len(wakuren_combinations)
+        
+        # Extract indices for first and second place horses from sanrentan combinations
+        # Subtract 1 to convert from 1-indexed to 0-indexed
+        first_place_indices = sanrentan_tensor[:, 0] - 1  # [n_sanrentan]
+        second_place_indices = sanrentan_tensor[:, 1] - 1  # [n_sanrentan]
+        
+        # Create batch indices for advanced indexing
+        batch_indices = torch.arange(batch_size, device=device)
+        
+        # Expand indices for broadcasting
+        # [batch_size, n_sanrentan]
+        batch_indices_expanded = batch_indices.view(batch_size, 1).expand(batch_size, n_sanrentan)
+        first_place_expanded = first_place_indices.view(1, n_sanrentan).expand(batch_size, n_sanrentan)
+        second_place_expanded = second_place_indices.view(1, n_sanrentan).expand(batch_size, n_sanrentan)
+        
+        # Get frame numbers for first and second place horses
+        # [batch_size, n_sanrentan]
+        first_frames = wakuban[batch_indices_expanded, first_place_expanded]
+        second_frames = wakuban[batch_indices_expanded, second_place_expanded]
+        
+        # Sort frame numbers (since wakuren is unordered)
+        # [batch_size, n_sanrentan]
+        min_frames = torch.min(first_frames, second_frames)
+        max_frames = torch.max(first_frames, second_frames)
+        
+        # Reshape for broadcasting comparison
+        # [batch_size, 1, n_sanrentan, 2]
+        sorted_frame_pairs = torch.stack([min_frames, max_frames], dim=2).unsqueeze(1)
+        # [1, n_wakuren, 1, 2]
+        wakuren_expanded = wakuren_tensor.unsqueeze(0).unsqueeze(2)
+        
+        # Compare each wakuren with each sorted frame pair
+        # [batch_size, n_wakuren, n_sanrentan, 2]
+        matches = sorted_frame_pairs == wakuren_expanded
+        
+        # A match occurs when both frame numbers match
+        # [batch_size, n_wakuren, n_sanrentan]
+        all_match = matches.all(dim=3).float()
+        
+        return all_match
     
     def _compute_trifecta_scores(self, horse_performances, max_horses, horse_counts):
         """Compute scores for all possible trifecta combinations.

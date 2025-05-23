@@ -32,10 +32,6 @@ class BettingSimulator:
         self.initial_capital = config.getfloat(
             'betting.simulator', 'initial_capital', fallback=300000.0)
         
-        # 馬券の最小購入単位（日本の馬券は100円単位）
-        self.bet_unit = config.getfloat(
-            'betting.simulator', 'bet_unit', fallback=100.0)
-        
         # 馬券購入明細に含めるレース数の上限（デフォルト10件）
         self.max_bet_details_races = config.getint(
             'betting.simulator', 'max_bet_details_races', fallback=12)
@@ -87,13 +83,15 @@ class BettingSimulator:
     def add_default_strategies(self) -> None:
         """デフォルトの戦略を登録する"""
         try:
-            # Example usage of CombinedStrategy
-            from horguesc.core.betting.strategies.odds_discrepancy import OddsDiscrepancyStrategy
-
-            odds_discrepancy_strategy = OddsDiscrepancyStrategy(self.config)
-            self.register_strategy("Odds Discrepancy Strategy", odds_discrepancy_strategy)
-
-            logger.info("デフォルトの戦略を登録しました")
+            # デフォルト戦略をインポート
+            from horguesc.core.betting.strategies.default import default_strategies
+            
+            # 設定ファイルから戦略を初期化して登録
+            for name, strategy_class in default_strategies.items():
+                strategy = strategy_class(self.config)
+                self.register_strategy(name, strategy)
+                
+            logger.info(f"デフォルトの戦略を登録しました: {', '.join(default_strategies.keys())}")
         except ImportError as e:
             logger.warning(f"デフォルト戦略の登録に失敗しました: {e}")
             raise
@@ -160,8 +158,8 @@ class BettingSimulator:
         for strategy_name, strategy in self.strategies.items():
             logger.info(f"戦略「{strategy_name}」のシミュレーションを開始")
             
-            # 馬券購入比率を計算
-            bet_proportions = strategy.calculate_bet_proportions(model_outputs, odds_data)
+            # 馬券購入金額を計算（初期資金をベースに）
+            bet_amounts = strategy.calculate_bet_amounts(model_outputs, odds_data, self.initial_capital)
             
             # 初期資金をテンソルとして準備 [race_count+1]
             capital_tensor = torch.full((race_count+1,), self.initial_capital, device=device)
@@ -177,23 +175,15 @@ class BettingSimulator:
             
             # 各馬券種について処理
             for bet_type in BaseStrategy.ALL_BET_TYPES:
-                if bet_type in bet_proportions:
-                    # この馬券種の購入比率を取得
-                    proportions = bet_proportions[bet_type]  # [race_count, n_combinations]
+                if bet_type in bet_amounts:
+                    # この馬券種の購入金額を取得
+                    amounts = bet_amounts[bet_type]  # [race_count, n_combinations]
                     odds_key = f'odds_{bet_type}'
                     results_key = f'target_{bet_type}'
                     
                     if odds_key in odds_data and results_key in race_results:
                         type_odds = odds_data[odds_key]  # [race_count, n_combinations]
                         type_result = race_results[results_key]  # [race_count] or [race_count, n_combinations]
-                        
-                        # 購入金額を計算 (資金 × 購入比率を bet_unit 単位に切り捨て)
-                        # [race_count, 1] * [race_count, n_combinations] -> [race_count, n_combinations]
-                        capital_expanded = capital_tensor[:-1].unsqueeze(1)
-                        raw_amounts = capital_expanded * proportions
-                        
-                        # bet_unit単位に四捨五入
-                        amounts = (torch.round(raw_amounts / self.bet_unit)) * self.bet_unit
                         
                         # 有効な購入（金額 > 0）のマスク
                         valid_bets = amounts > 0
@@ -205,7 +195,7 @@ class BettingSimulator:
                             
                             # 各レースで的中したベットのマスクを作成
                             # [race_count, n_combinations]
-                            indices_range = torch.arange(proportions.size(1), device=device)
+                            indices_range = torch.arange(amounts.size(1), device=device)
                             hit_mask = (indices_range.unsqueeze(0) == result_indices) & (result_indices >= 0)
                             
                             # 的中した購入のみを抽出
@@ -249,7 +239,7 @@ class BettingSimulator:
                                 
                                 race_id = race_ids[race_idx] if race_idx < len(race_ids) else f"Race_{race_idx+1}"
                                 
-                                for bet_idx in range(proportions.size(1)):
+                                for bet_idx in range(amounts.size(1)):
                                     if valid_bets[race_idx, bet_idx]:
                                         amount = amounts[race_idx, bet_idx].item()
                                         hit = False
@@ -269,13 +259,13 @@ class BettingSimulator:
                                             'amount': amount,
                                             'odds': type_odds[race_idx, bet_idx].item(),
                                             'hit': hit,
-                                            'return': amount * type_odds[race_idx, bet_idx].item() if hit else 0.0,
-                                            'capital_before': capital_tensor[race_idx].item(),
+                                            'return': amount * type_odds[race_idx, bet_idx].item() if hit else 0.0
                                         })
             
-            # レースごとの資金推移を計算 (差分で計算)
+            # レースごとの資金推移を計算 (実際のシミュレーション)
             # 次のレースの資金 = 今のレースの資金 - 賭け金 + 払戻金
-            capital_tensor[1:] = capital_tensor[0] - torch.cumsum(total_bet_amount_per_race, dim=0) + torch.cumsum(total_return_amount_per_race, dim=0)
+            for i in range(race_count):
+                capital_tensor[i+1] = capital_tensor[i] - total_bet_amount_per_race[i] + total_return_amount_per_race[i]
             
             # 集計結果
             total_bet_amount = total_bet_amount_per_race.sum().item()

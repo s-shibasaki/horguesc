@@ -592,6 +592,7 @@ class TrifectaDataset(BaseDataset):
         
         This method loads various betting odds types using OddsLoader and adds them to the dataset,
         structured as arrays with shape [num_races, ...] to ensure compatibility with batch processing.
+        Also adds inverse odds (implied probabilities) for each odds type.
         
         Args:
             db_ops: Optional database operations object. If None, a new one will be created.
@@ -617,11 +618,6 @@ class TrifectaDataset(BaseDataset):
         wakuban_array = self.raw_data.get('wakuban')
         
         # Load all odds types that we want to include
-        # odds_types = [
-        #     odds_loader.TANSHO,     # Win odds
-        #     odds_loader.FUKUSHO,    # Place odds
-        #     odds_loader.SANRENTAN,  # Trifecta odds - most important for this task
-        # ]
         odds_types = None  # Load all odds types
         
         logger.info(f"Loading odds data for {len(race_ids)} races")
@@ -638,7 +634,14 @@ class TrifectaDataset(BaseDataset):
             # Add odds data to raw_data with prefix 'odds_'
             for odds_type, odds_array in odds_data.items():
                 self.raw_data[f'odds_{odds_type}'] = odds_array
-                logger.info(f"Added {odds_type} odds data with shape {odds_array.shape}")
+                
+                # Calculate inverse odds (implied probabilities)
+                inverse_odds = 1.0 / odds_array
+                
+                # Add inverse odds to raw_data with prefix 'inverse_odds_'
+                self.raw_data[f'inverse_odds_{odds_type}'] = inverse_odds
+                
+                logger.info(f"Added {odds_type} odds data with shape {odds_array.shape} and corresponding inverse odds")
                 
         except Exception as e:
             logger.error(f"Error loading odds data: {e}", exc_info=True)

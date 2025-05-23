@@ -77,10 +77,12 @@ class Config(configparser.ConfigParser):
         # 特徴量リストを取得
         numerical_features_str = self.get('features', 'numerical_features', fallback='').strip()
         categorical_features_str = self.get('features', 'categorical_features', fallback='').strip()
+        skip_embedding_features_str = self.get('features', 'skip_embedding_features', fallback='').strip()
         
         # 数値特徴量とカテゴリカル特徴量のリストを作成
         self.numerical_features = [f.strip() for f in numerical_features_str.split(',') if f.strip()]
         self.categorical_features = [f.strip() for f in categorical_features_str.split(',') if f.strip()]
+        self.skip_embedding_features = [f.strip() for f in skip_embedding_features_str.split(',') if f.strip()]
         
         # グループ情報を保持する辞書（特徴量名からグループ名へのマッピング）
         self.feature_groups = {
@@ -100,7 +102,7 @@ class Config(configparser.ConfigParser):
                         self.feature_groups['numerical'][feature] = group_name
                     elif feature in self.categorical_features:
                         self.feature_groups['categorical'][feature] = group_name
-        
+    
         # グループに属さない特徴量は自分自身がグループになる
         for feature in self.numerical_features:
             if feature not in self.feature_groups['numerical']:
@@ -125,6 +127,8 @@ class Config(configparser.ConfigParser):
         
         logger.info(f"Found {len(self.numerical_features)} numerical features and {len(self.categorical_features)} categorical features")
         logger.info(f"Configured {len(self.group_features['numerical'])} numerical groups and {len(self.group_features['categorical'])} categorical groups")
+        if self.skip_embedding_features:
+            logger.info(f"Configured {len(self.skip_embedding_features)} features to skip embedding: {', '.join(self.skip_embedding_features)}")
         return self
     
     def update_from_args(self, args):

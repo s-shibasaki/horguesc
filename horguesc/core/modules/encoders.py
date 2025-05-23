@@ -32,6 +32,15 @@ class FeatureEncoder(nn.Module):
         # 特徴量のグループ情報を取得
         self.feature_groups = config.feature_groups
         
+        # スキップする特徴量のリストを取得
+        self.skip_embedding_features = set(config.skip_embedding_features) if hasattr(config, 'skip_embedding_features') else set()
+        
+        # 実際に処理する特徴量を取得（スキップするものを除外）
+        self.processed_numerical_features = [f for f in config.numerical_features if f not in self.skip_embedding_features]
+        self.processed_categorical_features = [f for f in config.categorical_features if f not in self.skip_embedding_features]
+        
+        logger.info(f"スキップする特徴量: {len(self.skip_embedding_features)}個")
+        
         # デフォルトの埋め込み次元
         self.default_numerical_dim = config.getint('model', 'numerical_embedding_dim', fallback=8)
         
@@ -44,55 +53,74 @@ class FeatureEncoder(nn.Module):
         self.cat_embedding_dims = {}
         
         # 数値特徴量グループの埋め込み層を初期化
-        for group_name in config.group_features['numerical']:
-            embedding_dim = self.default_numerical_dim
-            
-            self.numerical_embeddings[group_name] = nn.Sequential(
-                nn.Linear(1, embedding_dim),
-                nn.ReLU()
-            )
-            # グループの埋め込み次元を記録
-            self.num_embedding_dims[group_name] = embedding_dim
-            
-            logger.debug(f"数値グループ '{group_name}' の埋め込み層を作成: dim={embedding_dim}, "
-                        f"特徴量={len(config.group_features['numerical'][group_name])}個")
+        processed_numerical_groups = set()
+        for feature_name in self.processed_numerical_features:
+            group_name = self.feature_groups['numerical'][feature_name]
+            if group_name not in processed_numerical_groups:
+                processed_numerical_groups.add(group_name)
+                embedding_dim = self.default_numerical_dim
+                
+                # ゼロ初期化した線形層を作成
+                linear = nn.Linear(1, embedding_dim)
+                with torch.no_grad():
+                    linear.weight.fill_(0.0)
+                    linear.bias.fill_(0.0)
+                
+                self.numerical_embeddings[group_name] = nn.Sequential(
+                    linear,
+                    nn.ReLU()
+                )
+                # グループの埋め込み次元を記録
+                self.num_embedding_dims[group_name] = embedding_dim
+                
+                logger.debug(f"数値グループ '{group_name}' の埋め込み層をゼロで初期化: dim={embedding_dim}, "
+                            f"特徴量={len([f for f in self.processed_numerical_features if self.feature_groups['numerical'][f] == group_name])}個")
         
         # カテゴリカル特徴量グループの埋め込み層を初期化
-        for group_name in config.group_features['categorical']:
-            try:
-                # カーディナリティの取得を試みる
-                cardinality = self.group_cardinalities[group_name]
-            except KeyError:
-                # カーディナリティが指定されていない場合、デフォルト値を使用して警告
-                cardinality = 100  # デフォルト値
-                logger.warning(f"カテゴリグループ '{group_name}' のカーディナリティが指定されていません。"
-                              f"デフォルト値 ({cardinality}) を使用します。")
-            
-            # Add to _suggest_embedding_dim
-            if cardinality > 10000:
-                # Use hashing trick or dimensionality reduction for extremely high cardinality
-                logger.warning(f"Very high cardinality ({cardinality}) detected for {group_name}")
-            
-            # カーディナリティに基づいて埋め込み次元を決定
-            embedding_dim = self._suggest_embedding_dim(cardinality)
-            
-            self.categorical_embeddings[group_name] = nn.Embedding(
-                num_embeddings=cardinality + 1,  # +1 はパディング/不明な値用
-                embedding_dim=embedding_dim,
-                padding_idx=0
-            )
-            
-            # グループの埋め込み次元を記録
-            self.cat_embedding_dims[group_name] = embedding_dim
-            
-            logger.debug(f"カテゴリグループ '{group_name}' の埋め込み層を作成: cardinality={cardinality}, "
-                       f"dim={embedding_dim}, 特徴量={len(config.group_features['categorical'][group_name])}個")
+        processed_categorical_groups = set()
+        for feature_name in self.processed_categorical_features:
+            group_name = self.feature_groups['categorical'][feature_name]
+            if group_name not in processed_categorical_groups:
+                processed_categorical_groups.add(group_name)
+                try:
+                    # カーディナリティの取得を試みる
+                    cardinality = self.group_cardinalities[group_name]
+                except KeyError:
+                    # カーディナリティが指定されていない場合、デフォルト値を使用して警告
+                    cardinality = 100  # デフォルト値
+                    logger.warning(f"カテゴリグループ '{group_name}' のカーディナリティが指定されていません。"
+                                  f"デフォルト値 ({cardinality}) を使用します。")
+                
+                # Add to _suggest_embedding_dim
+                if cardinality > 10000:
+                    # Use hashing trick or dimensionality reduction for extremely high cardinality
+                    logger.warning(f"Very high cardinality ({cardinality}) detected for {group_name}")
+                
+                # カーディナリティに基づいて埋め込み次元を決定
+                embedding_dim = self._suggest_embedding_dim(cardinality)
+                
+                # ゼロで初期化した埋め込み層を作成
+                embedding = nn.Embedding(
+                    num_embeddings=cardinality + 1,  # +1 はパディング/不明な値用
+                    embedding_dim=embedding_dim,
+                    padding_idx=0
+                )
+                with torch.no_grad():
+                    embedding.weight.fill_(0.0)
+                
+                self.categorical_embeddings[group_name] = embedding
+                
+                # グループの埋め込み次元を記録
+                self.cat_embedding_dims[group_name] = embedding_dim
+                
+                logger.debug(f"カテゴリグループ '{group_name}' の埋め込み層をゼロで初期化: cardinality={cardinality}, "
+                           f"dim={embedding_dim}, 特徴量={len([f for f in self.processed_categorical_features if self.feature_groups['categorical'][f] == group_name])}個")
         
         # 出力次元の計算
         self.numerical_total_dim = sum(self.num_embedding_dims[self.feature_groups['numerical'][feature]] 
-                                      for feature in self.config.numerical_features)
+                                      for feature in self.processed_numerical_features)
         self.categorical_total_dim = sum(self.cat_embedding_dims[self.feature_groups['categorical'][feature]] 
-                                      for feature in self.config.categorical_features)
+                                      for feature in self.processed_categorical_features)
         self.output_dim = self.numerical_total_dim + self.categorical_total_dim
         
         # 特徴量ごとの埋め込み位置マッピングを作成
@@ -100,6 +128,9 @@ class FeatureEncoder(nn.Module):
         
         logger.info(f"FeatureEncoder 初期化完了: 出力次元={self.output_dim} "
                    f"(数値特徴量={self.numerical_total_dim}, カテゴリ埋め込み={self.categorical_total_dim})")
+        logger.info(f"処理される特徴量: 数値={len(self.processed_numerical_features)}個, カテゴリ={len(self.processed_categorical_features)}個")
+        if self.skip_embedding_features:
+            logger.info(f"スキップされる特徴量: {', '.join(self.skip_embedding_features)}")
     
     def _create_feature_position_mapping(self):
         """各特徴量の埋め込み結果が最終出力テンソルのどの位置に配置されるかのマッピングを作成します。
@@ -111,7 +142,7 @@ class FeatureEncoder(nn.Module):
         current_position = 0
         
         # 数値特徴量の位置を決定
-        for feature_name in self.config.numerical_features:
+        for feature_name in self.processed_numerical_features:
             group_name = self.feature_groups['numerical'][feature_name]
             embed_dim = self.num_embedding_dims[group_name]
             
@@ -119,7 +150,7 @@ class FeatureEncoder(nn.Module):
             current_position += embed_dim
     
         # カテゴリカル特徴量の位置を決定
-        for feature_name in self.config.categorical_features:
+        for feature_name in self.processed_categorical_features:
             group_name = self.feature_groups['categorical'][feature_name]
             embed_dim = self.cat_embedding_dims[group_name]
             
@@ -155,9 +186,9 @@ class FeatureEncoder(nn.Module):
     def forward(self, features):
         """特徴量を埋め込み表現に変換します。
         
-        エンコードされる特徴量（numerical_featuresとcategorical_featuresに含まれるもの）は
-        同じ形状である必要があります。
+        エンコードされる特徴量は同じ形状である必要があります。
         最後の次元に特徴量埋め込みを追加します。
+        skip_embedding_featuresに指定された特徴量は無視されます。
         
         例：入力が (batch_size,) の場合、出力は (batch_size, embedding_dim)
         例：入力が (batch_size, seq_len) の場合、出力は (batch_size, seq_len, embedding_dim)
@@ -175,7 +206,8 @@ class FeatureEncoder(nn.Module):
             torch.Tensor: 結合された埋め込み表現
         """
         # 入力形状情報を抽出
-        encoder_features = set(self.config.numerical_features + self.config.categorical_features)
+        # スキップリストを除外して実際に処理する特徴量のみを対象とする
+        encoder_features = set(self.processed_numerical_features + self.processed_categorical_features)
         valid_features = [f for f in encoder_features if f in features]
         
         if not valid_features:
@@ -200,9 +232,13 @@ class FeatureEncoder(nn.Module):
         
         # 各特徴量の埋め込み計算と結果テンソルへの配置
         for feature_name in valid_features:
+            # スキップリストに含まれる特徴量は処理しない
+            if feature_name in self.skip_embedding_features:
+                continue
+                
             value = features[feature_name]
             
-            if feature_name in self.config.categorical_features:
+            if feature_name in self.processed_categorical_features:
                 # この特徴量のグループを特定
                 group_name = self.feature_groups['categorical'][feature_name]
                 
@@ -221,7 +257,7 @@ class FeatureEncoder(nn.Module):
                 start_pos, end_pos = self.feature_to_position[feature_name]
                 combined[..., start_pos:end_pos] = embedding
                 
-            elif feature_name in self.config.numerical_features:
+            elif feature_name in self.processed_numerical_features:
                 # この特徴量のグループを特定
                 group_name = self.feature_groups['numerical'][feature_name]
                 
@@ -269,10 +305,15 @@ class FeatureEncoder(nn.Module):
         Returns:
             torch.Tensor: 指定特徴量の埋め込み
         """
-        if feature_name in self.config.categorical_features:
+        # スキップする特徴量の場合はNoneを返す
+        if feature_name in self.skip_embedding_features:
+            logger.warning(f"特徴量 '{feature_name}' はスキップリストに含まれているため埋め込みを取得できません")
+            return None
+            
+        if feature_name in self.processed_categorical_features:
             group_name = self.feature_groups['categorical'][feature_name]
             return self.categorical_embeddings[group_name](value)
-        elif feature_name in self.config.numerical_features:
+        elif feature_name in self.processed_numerical_features:
             group_name = self.feature_groups['numerical'][feature_name]
             # NaN処理を適用
             mask = ~torch.isnan(value)

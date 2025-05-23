@@ -22,15 +22,15 @@ class OddsDiscrepancyStrategy(BaseStrategy):
         
         # 投資比率（各レースで投入する資金の割合）
         self.base_ratio = config.getfloat(
-            'betting.strategies.odds_discrepancy', 'base_ratio', fallback=0.0003)
+            'betting.strategies.odds_discrepancy', 'base_ratio', fallback=0.0001)
         
         # 最低乖離（この値以上の乖離がある場合のみ購入）
         self.min_discrepancy = config.getfloat(
-            'betting.strategies.odds_discrepancy', 'min_discrepancy', fallback=0.05)
+            'betting.strategies.odds_discrepancy', 'min_discrepancy', fallback=0.02)
         
         # 最低確率閾値（この確率以上の場合のみ乖離計算を行う）
         self.min_probability = config.getfloat(
-            'betting.strategies.odds_discrepancy', 'min_probability', fallback=0.001)
+            'betting.strategies.odds_discrepancy', 'min_probability', fallback=0.02)
         
         # 乖離最大値（異常値を抑制）
         self.max_discrepancy = config.getfloat(
@@ -38,7 +38,7 @@ class OddsDiscrepancyStrategy(BaseStrategy):
         
         # 最大合計比率（レース当たりの合計投資比率の上限）
         self.max_total_bet_proportion = config.getfloat(
-            'betting.strategies.odds_discrepancy', 'max_total_bet_proportion', fallback=0.05)
+            'betting.strategies.odds_discrepancy', 'max_total_bet_proportion', fallback=0.01)
         
         logger.debug(f"OddsDiscrepancyStrategy initialized with base_ratio={self.base_ratio}, "
                     f"min_discrepancy={self.min_discrepancy}, min_probability={self.min_probability}, "

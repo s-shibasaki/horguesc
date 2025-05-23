@@ -87,13 +87,11 @@ class BettingSimulator:
     def add_default_strategies(self) -> None:
         """デフォルトの戦略を登録する"""
         try:
-            # 戦略クラスをインポート
-            from horguesc.core.betting.strategies.expected_value import ExpectedValueStrategy
+            # Example usage of CombinedStrategy
             from horguesc.core.betting.strategies.odds_discrepancy import OddsDiscrepancyStrategy
-            
-            # 基本戦略インスタンスを作成して登録
-            self.register_strategy("Expected Value Strategy", ExpectedValueStrategy(self.config))
-            self.register_strategy("Odds Discrepancy Strategy", OddsDiscrepancyStrategy(self.config))
+
+            odds_discrepancy_strategy = OddsDiscrepancyStrategy(self.config)
+            self.register_strategy("Odds Discrepancy Strategy", odds_discrepancy_strategy)
 
             logger.info("デフォルトの戦略を登録しました")
         except ImportError as e:
@@ -194,8 +192,8 @@ class BettingSimulator:
                         capital_expanded = capital_tensor[:-1].unsqueeze(1)
                         raw_amounts = capital_expanded * proportions
                         
-                        # bet_unit単位に切り捨て
-                        amounts = (raw_amounts // self.bet_unit) * self.bet_unit
+                        # bet_unit単位に四捨五入
+                        amounts = (torch.round(raw_amounts / self.bet_unit)) * self.bet_unit
                         
                         # 有効な購入（金額 > 0）のマスク
                         valid_bets = amounts > 0

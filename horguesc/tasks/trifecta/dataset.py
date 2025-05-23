@@ -391,11 +391,7 @@ class TrifectaDataset(BaseDataset):
                 logger.info(f"推論用Trifectaデータの取得完了（ターゲットなし）: {len(self.raw_data['kyoso_id'])}競走、{len(results)}頭")
             
             # Add betting odds data
-            if self.mode == self.MODE_TRAIN:
-                logger.info("トレーニングモードではオッズデータを追加しません")
-            else:
-                logger.info("オッズデータを追加します")
-                self._add_betting_odds(db_ops)
+            self._add_betting_odds(db_ops)
     
         except Exception as e:
             logger.error(f"データ取得中にエラーが発生しました: {e}")
@@ -431,16 +427,8 @@ class TrifectaDataset(BaseDataset):
             kyoso_id = f"{date_str}{keibajo_code}{kaisai_kai}{kaisai_nichime}{kyoso_bango}"
             kyoso_groups[kyoso_id].append(row)
         
-        # 馬番の最大値を取得 (馬番は1から始まる)
-        max_horse_number = 0
-        for horses in kyoso_groups.values():
-            for horse in horses:
-                umaban = horse.get('umaban')
-                if umaban is not None and not pd.isna(umaban):
-                    max_horse_number = max(max_horse_number, int(umaban))
-        
-        # 安全マージンを取って、最大馬番を18(JRAの通常の最大値)にする
-        max_horse_number = max(max_horse_number, 18)
+        # 設定ファイルから最大馬番を読み取る（存在しない場合は18をデフォルト値とする）
+        max_horse_number = int(self.config.get('features', 'max_horse_number', fallback=18))
         logger.info(f"最大馬番: {max_horse_number}")
         
         # 特徴量データの2D配列を準備
@@ -608,7 +596,7 @@ class TrifectaDataset(BaseDataset):
         
         # Import and initialize OddsLoader
         from horguesc.core.betting.odds_loader import OddsLoader
-        odds_loader = OddsLoader(db_ops)
+        odds_loader = OddsLoader(db_ops, self.config)
         
         # Get race IDs and necessary arrays for odds loading
         race_ids = self.raw_data['kyoso_id']
@@ -689,7 +677,7 @@ class TrifectaDataset(BaseDataset):
         umatan_combinations = list(itertools.permutations(range(max_horses), 2))
         
         # 枠連用（枠番の組み合わせ、順不同）
-        max_frames = 8  # 日本の競馬では最大8枠
+        max_frames = self.config.getint('features', 'max_frame_number', fallback=8)
         wakuren_combinations = []
         for i in range(1, max_frames + 1):
             for j in range(i, max_frames + 1):  # i以上のjで組み合わせを作成（自枠との組み合わせも含む）

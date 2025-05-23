@@ -559,7 +559,7 @@ class TrifectaModel(BaseModel):
         n_sanrentan = len(sanrentan_combinations)
         
         # Define the maximum frame number (in Japan, typically 8)
-        max_frame = 8
+        max_frame = self.config.getint('features', 'max_frame_number', fallback=8)
         
         # Generate all possible wakuren combinations (frame pairs including same frame)
         wakuren_combinations = []

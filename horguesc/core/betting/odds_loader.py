@@ -4,6 +4,7 @@ Module for loading betting odds from the database.
 import logging
 import numpy as np
 import itertools
+import time  # Added for timing measurements
 from typing import List, Dict, Optional, Tuple, Any, Set
 import pandas as pd
 from datetime import datetime
@@ -27,7 +28,7 @@ class OddsLoader:
     
     ALL_ODDS_TYPES = [TANSHO, FUKUSHO, WAKUREN, UMAREN, WIDE, UMATAN, SANRENPUKU, SANRENTAN]
     
-    def __init__(self, db_ops):
+    def __init__(self, db_ops, config):
         """
         Initialize the OddsLoader with database operations.
         
@@ -35,7 +36,9 @@ class OddsLoader:
             db_ops: Database operations object
         """
         self.db_ops = db_ops
-        self.max_frame_number = 8  # Maximum frame number (defined in requirements)
+        self.config = config
+        self.max_frame_number = config.getint('features', 'max_frame_number', fallback=8)  # Maximum frame number (defined in requirements)
+        self.max_horse_number = config.getint('features', 'max_horse_number', fallback=18)  # Maximum horse number (defined in requirements)
     
     def load_odds(self, 
                   race_ids: List[str], 
@@ -54,6 +57,9 @@ class OddsLoader:
         Returns:
             Dictionary mapping odds types to numpy arrays of shape (num_races, combinations)
         """
+        start_time = time.time()
+        logger.info(f"Starting to load odds for {len(race_ids)} races")
+
         if odds_types is None:
             odds_types = self.ALL_ODDS_TYPES
             
@@ -63,33 +69,39 @@ class OddsLoader:
             return {}
             
         # Get date range from race IDs
-        min_date, max_date = self._get_date_range_from_race_ids(race_ids)
-        logger.info(f"Loading odds for date range: {min_date} to {max_date}")
+        min_date_str, max_date_str = self._get_date_range_from_race_ids(race_ids)
+        logger.info(f"Date range: {min_date_str} to {max_date_str}")
         
         # Dictionary to store results
         odds_data = {}
         
-        # Get max horses count from data
-        num_races, max_horses = horse_numbers.shape
-        
         # Load each requested odds type
         for odds_type in odds_types:
+            type_start_time = time.time()
+            logger.info(f"Starting to load {odds_type} odds...")
+            
             if odds_type == self.TANSHO:
-                odds_data[odds_type] = self._load_tansho(race_ids, horse_numbers, min_date, max_date)
+                odds_data[odds_type] = self._load_tansho(race_ids, horse_numbers, min_date_str, max_date_str)
             elif odds_type == self.FUKUSHO:
-                odds_data[odds_type] = self._load_fukusho(race_ids, horse_numbers, min_date, max_date)
+                odds_data[odds_type] = self._load_fukusho(race_ids, horse_numbers, min_date_str, max_date_str)
             elif odds_type == self.WAKUREN:
-                odds_data[odds_type] = self._load_wakuren(race_ids, frame_numbers, min_date, max_date)
+                odds_data[odds_type] = self._load_wakuren(race_ids, frame_numbers, min_date_str, max_date_str)
             elif odds_type == self.UMAREN:
-                odds_data[odds_type] = self._load_umaren(race_ids, horse_numbers, min_date, max_date)
+                odds_data[odds_type] = self._load_umaren(race_ids, horse_numbers, min_date_str, max_date_str)
             elif odds_type == self.WIDE:
-                odds_data[odds_type] = self._load_wide(race_ids, horse_numbers, min_date, max_date)
+                odds_data[odds_type] = self._load_wide(race_ids, horse_numbers, min_date_str, max_date_str)
             elif odds_type == self.UMATAN:
-                odds_data[odds_type] = self._load_umatan(race_ids, horse_numbers, min_date, max_date)
+                odds_data[odds_type] = self._load_umatan(race_ids, horse_numbers, min_date_str, max_date_str)
             elif odds_type == self.SANRENPUKU:
-                odds_data[odds_type] = self._load_sanrenpuku(race_ids, horse_numbers, min_date, max_date)
+                odds_data[odds_type] = self._load_sanrenpuku(race_ids, horse_numbers, min_date_str, max_date_str)
             elif odds_type == self.SANRENTAN:
-                odds_data[odds_type] = self._load_sanrentan(race_ids, horse_numbers, min_date, max_date)
+                odds_data[odds_type] = self._load_sanrentan(race_ids, horse_numbers, min_date_str, max_date_str)
+                
+            type_elapsed_time = time.time() - type_start_time
+            logger.info(f"Completed loading {odds_type} odds in {type_elapsed_time:.2f} seconds")
+        
+        total_elapsed_time = time.time() - start_time
+        logger.info(f"Completed loading all odds in {total_elapsed_time:.2f} seconds")
         
         return odds_data
     
@@ -101,73 +113,24 @@ class OddsLoader:
             race_ids: List of race IDs where first 8 chars represent date (YYYYMMDD)
             
         Returns:
-            Tuple of (min_date, max_date) in YYYY-MM-DD format
+            Tuple of (min_date_str, max_date_str) in YYYY-MM-DD format
         """
         dates = [race_id[:8] for race_id in race_ids]
         min_date_str = min(dates)
         max_date_str = max(dates)
         
         # Convert to YYYY-MM-DD format
-        min_date = f"{min_date_str[:4]}-{min_date_str[4:6]}-{min_date_str[6:8]}"
-        max_date = f"{max_date_str[:4]}-{max_date_str[4:6]}-{max_date_str[6:8]}"
+        min_date_str = f"{min_date_str[:4]}-{min_date_str[4:6]}-{min_date_str[6:8]}"
+        max_date_str = f"{max_date_str[:4]}-{max_date_str[4:6]}-{max_date_str[6:8]}"
         
-        return min_date, max_date
-    
-    def _extract_race_components(self, race_id: str) -> Tuple[str, str, str, str, str]:
-        """
-        Extract components from race ID.
-        
-        Args:
-            race_id: Race ID in format YYYYMMDDKKRRNNRR
-                    (date, track_code, kai, nichime, race_number)
-            
-        Returns:
-            Tuple of (date, track_code, kai, nichime, race_number)
-        """
-        date = f"{race_id[:4]}-{race_id[4:6]}-{race_id[6:8]}"
-        track_code = race_id[8:10]
-        kai = race_id[10:12]
-        nichime = race_id[12:14]
-        race_number = race_id[14:16]
-        
-        return date, track_code, kai, nichime, race_number
-    
-    def _build_race_id_map(self, race_ids: List[str]) -> Dict[Tuple, int]:
-        """
-        Build a mapping from race components to indices.
-        
-        Args:
-            race_ids: List of race IDs
-            
-        Returns:
-            Dictionary mapping (date, track, kai, nichime, race) to index
-        """
-        race_id_map = {}
-        for i, race_id in enumerate(race_ids):
-            date, track, kai, nichime, race = self._extract_race_components(race_id)
-            race_id_map[(date, track, kai, nichime, race)] = i
-        return race_id_map
+        return min_date_str, max_date_str
     
     def _load_tansho(self, race_ids: List[str], horse_numbers: np.ndarray, min_date: str, max_date: str) -> np.ndarray:
         """
-        Load win odds (単勝).
-        
-        Args:
-            race_ids: List of race IDs
-            horse_numbers: Array of horse numbers
-            min_date: Minimum date in YYYY-MM-DD format
-            max_date: Maximum date in YYYY-MM-DD format
-            
-        Returns:
-            Array of win odds with shape (num_races, max_horses)
+        Load win odds (単勝) using pandas for optimization.
         """
-        num_races, max_horses = horse_numbers.shape
-        
-        # Initialize odds array with NaN
-        odds_array = np.full((num_races, max_horses), np.nan, dtype=np.float32)
-        
-        # Build race ID map
-        race_id_map = self._build_race_id_map(race_ids)
+        start_time = time.time()
+        logger.info(f"Beginning tansho query...")
         
         # Query to get the latest tansho odds for each race
         query = """
@@ -202,62 +165,102 @@ class OddsLoader:
         """
         
         try:
-            # Execute query
+            # Execute query and get results as DataFrame
+            query_start_time = time.time()
             results = self.db_ops.execute_query(query, params=[min_date, max_date], fetch_all=True, as_dict=True)
+            query_elapsed_time = time.time() - query_start_time
+            logger.info(f"Tansho database query completed in {query_elapsed_time:.2f} seconds")
             
-            # Process results
-            for row in results:
-                # Convert date to string in YYYY-MM-DD format
-                date_str = row['kaisai_date']
-                if hasattr(date_str, 'strftime'):
-                    date_str = date_str.strftime('%Y-%m-%d')
-                
-                # Create key for race_id_map
-                key = (
-                    date_str,
-                    str(row['keibajo_code']).zfill(2),
-                    str(row['kaisai_kai']).zfill(2),
-                    str(row['kaisai_nichime']).zfill(2),
-                    str(row['kyoso_bango']).zfill(2)
-                )
-                
-                if key in race_id_map:
-                    race_idx = race_id_map[key]
-                    umaban = int(row['umaban']) - 1  # Convert to 0-based index
-                    odds_value = row['odds']
-                    
-                    # Only set odds if umaban is within bounds and odds exists
-                    if 0 <= umaban < max_horses and odds_value is not None:
-                        # Convert to decimal odds (divide by 10 since DB stores odds*10)
-                        odds_array[race_idx, umaban] = float(odds_value) / 10.0
+            if not results:
+                logger.info("No tansho odds found for the specified races")
+                return np.full_like(horse_numbers, np.nan, dtype=np.float32)
             
-            logger.info(f"Loaded tansho odds for {len(results)} horse-race combinations")
+            logger.info(f"Tansho query returned {len(results)} rows")
+                
+            df_start_time = time.time()
+            df = pd.DataFrame([dict(row) for row in results])
+            df_elapsed_time = time.time() - df_start_time
+            logger.info(f"Created pandas DataFrame in {df_elapsed_time:.2f} seconds")
+            
+            # Convert to numeric for calculations
+            convert_start_time = time.time()
+            df['umaban'] = df['umaban'].astype(int)
+            df['odds'] = df['odds'].astype(float) / 10.0  # Convert to decimal odds
+            convert_elapsed_time = time.time() - convert_start_time
+            logger.info(f"Converted data types in {convert_elapsed_time:.2f} seconds")
+
+            # umabanの最大値と最小値を出力
+            max_umaban = df['umaban'].max()
+            min_umaban = df['umaban'].min()
+            logger.info(f"Max umaban: {max_umaban}, Min umaban: {min_umaban}")            
+            
+            # Create a dictionary to map race_id to index in the array
+            index_start_time = time.time()
+            race_id_to_index = {race_id: idx for idx, race_id in enumerate(race_ids)}
+            index_elapsed_time = time.time() - index_start_time
+            logger.info(f"Created race_id to index mapping in {index_elapsed_time:.2f} seconds")
+            
+            # Convert kaisai_date to datetime if it's not already
+            date_start_time = time.time()
+            df['kaisai_date'] = pd.to_datetime(df['kaisai_date'])
+
+            # Then create race_id as before
+            df['race_id'] = df['kaisai_date'].dt.strftime('%Y%m%d') + df['keibajo_code'] + df['kaisai_kai'].astype(str).str.zfill(2) + df['kaisai_nichime'].astype(str).str.zfill(2) + df['kyoso_bango'].astype(str).str.zfill(2)
+            date_elapsed_time = time.time() - date_start_time
+            logger.info(f"Created race_id field in {date_elapsed_time:.2f} seconds")
+
+            # Initialize odds_array with NaN values
+            init_start_time = time.time()
+            odds_array = np.full_like(horse_numbers, np.nan, dtype=np.float32)
+            init_elapsed_time = time.time() - init_start_time
+            logger.info(f"Initialized odds array in {init_elapsed_time:.2f} seconds")
+            
+            # Filter df to only include race_ids that are in our list
+            filter_start_time = time.time()
+            valid_df = df[df['race_id'].isin(race_ids)]
+            filter_elapsed_time = time.time() - filter_start_time
+            logger.info(f"Filtered DataFrame in {filter_elapsed_time:.2f} seconds, {len(valid_df)} rows remain")
+            
+            if len(valid_df) > 0:
+                # Calculate indices for array assignment
+                indices_start_time = time.time()
+                row_indices = [race_id_to_index[rid] for rid in valid_df['race_id']]
+                col_indices = valid_df['umaban'].values - 1  # Adjust for 0-indexing
+                indices_elapsed_time = time.time() - indices_start_time
+                logger.info(f"Calculated indices in {indices_elapsed_time:.2f} seconds")
+                
+                # Filter out invalid indices (where horse number exceeds array dimensions)
+                mask_start_time = time.time()
+                valid_mask = col_indices < horse_numbers.shape[1]
+                row_indices = np.array(row_indices)[valid_mask]
+                col_indices = col_indices[valid_mask]
+                odds_values = valid_df['odds'].values[valid_mask]
+                mask_elapsed_time = time.time() - mask_start_time
+                logger.info(f"Applied valid mask in {mask_elapsed_time:.2f} seconds, {np.sum(valid_mask)} valid entries")
+                
+                # Assign odds to the array using advanced indexing
+                assign_start_time = time.time()
+                odds_array[row_indices, col_indices] = odds_values
+                assign_elapsed_time = time.time() - assign_start_time
+                logger.info(f"Assigned values to array in {assign_elapsed_time:.2f} seconds")
+            
+            logger.info(f"Loaded tansho odds for {len(valid_df)} horse-race combinations")
             
         except Exception as e:
             logger.error(f"Error loading tansho odds: {e}")
+            logger.exception(e)
+            return np.full_like(horse_numbers, np.nan, dtype=np.float32)
             
+        total_elapsed_time = time.time() - start_time
+        logger.info(f"Total tansho loading time: {total_elapsed_time:.2f} seconds")
         return odds_array
-    
+
     def _load_fukusho(self, race_ids: List[str], horse_numbers: np.ndarray, min_date: str, max_date: str) -> np.ndarray:
         """
-        Load place odds (複勝).
-        
-        Args:
-            race_ids: List of race IDs
-            horse_numbers: Array of horse numbers
-            min_date: Minimum date in YYYY-MM-DD format
-            max_date: Maximum date in YYYY-MM-DD format
-            
-        Returns:
-            Array of place odds with shape (num_races, max_horses)
+        Load place odds (複勝) using pandas for optimization.
         """
-        num_races, max_horses = horse_numbers.shape
-        
-        # Initialize odds array with NaN
-        odds_array = np.full((num_races, max_horses), np.nan, dtype=np.float32)
-        
-        # Build race ID map
-        race_id_map = self._build_race_id_map(race_ids)
+        start_time = time.time()
+        logger.info(f"Beginning fukusho query...")
         
         # Query to get the latest fukusho odds for each race
         query = """
@@ -292,76 +295,102 @@ class OddsLoader:
         """
         
         try:
-            # Execute query
+            # Execute query and get results as DataFrame
+            query_start_time = time.time()
             results = self.db_ops.execute_query(query, params=[min_date, max_date], fetch_all=True, as_dict=True)
+            query_elapsed_time = time.time() - query_start_time
+            logger.info(f"Fukusho database query completed in {query_elapsed_time:.2f} seconds")
             
-            # Process results (use min_odds as specified in requirements)
-            for row in results:
-                # Convert date to string in YYYY-MM-DD format
-                date_str = row['kaisai_date']
-                if hasattr(date_str, 'strftime'):
-                    date_str = date_str.strftime('%Y-%m-%d')
-                
-                # Create key for race_id_map
-                key = (
-                    date_str,
-                    str(row['keibajo_code']).zfill(2),
-                    str(row['kaisai_kai']).zfill(2),
-                    str(row['kaisai_nichime']).zfill(2),
-                    str(row['kyoso_bango']).zfill(2)
-                )
-                
-                if key in race_id_map:
-                    race_idx = race_id_map[key]
-                    umaban = int(row['umaban']) - 1  # Convert to 0-based index
-                    odds_value = row['min_odds']  # Use min_odds as specified
-                    
-                    # Only set odds if umaban is within bounds and odds exists
-                    if 0 <= umaban < max_horses and odds_value is not None:
-                        # Convert to decimal odds
-                        odds_array[race_idx, umaban] = float(odds_value) / 10.0
+            if not results:
+                logger.info("No fukusho odds found for the specified races")
+                return np.full_like(horse_numbers, np.nan, dtype=np.float32)
             
-            logger.info(f"Loaded fukusho odds for {len(results)} horse-race combinations")
+            logger.info(f"Fukusho query returned {len(results)} rows")
+                
+            df_start_time = time.time()
+            df = pd.DataFrame([dict(row) for row in results])
+            df_elapsed_time = time.time() - df_start_time
+            logger.info(f"Created pandas DataFrame in {df_elapsed_time:.2f} seconds")
+            
+            # Convert to numeric for calculations
+            convert_start_time = time.time()
+            df['umaban'] = df['umaban'].astype(int)
+            df['min_odds'] = df['min_odds'].astype(float) / 10.0  # Convert to decimal odds
+            convert_elapsed_time = time.time() - convert_start_time
+            logger.info(f"Converted data types in {convert_elapsed_time:.2f} seconds")
+
+            # Create a dictionary to map race_id to index in the array
+            index_start_time = time.time()
+            race_id_to_index = {race_id: idx for idx, race_id in enumerate(race_ids)}
+            index_elapsed_time = time.time() - index_start_time
+            logger.info(f"Created race_id to index mapping in {index_elapsed_time:.2f} seconds")
+            
+            # Convert kaisai_date to datetime if it's not already
+            date_start_time = time.time()
+            df['kaisai_date'] = pd.to_datetime(df['kaisai_date'])
+
+            # Then create race_id as before
+            df['race_id'] = df['kaisai_date'].dt.strftime('%Y%m%d') + df['keibajo_code'] + df['kaisai_kai'].astype(str).str.zfill(2) + df['kaisai_nichime'].astype(str).str.zfill(2) + df['kyoso_bango'].astype(str).str.zfill(2)
+            date_elapsed_time = time.time() - date_start_time
+            logger.info(f"Created race_id field in {date_elapsed_time:.2f} seconds")
+
+            # Initialize odds_array with NaN values
+            init_start_time = time.time()
+            odds_array = np.full_like(horse_numbers, np.nan, dtype=np.float32)
+            init_elapsed_time = time.time() - init_start_time
+            logger.info(f"Initialized odds array in {init_elapsed_time:.2f} seconds")
+            
+            # Filter df to only include race_ids that are in our list
+            filter_start_time = time.time()
+            valid_df = df[df['race_id'].isin(race_ids)]
+            filter_elapsed_time = time.time() - filter_start_time
+            logger.info(f"Filtered DataFrame in {filter_elapsed_time:.2f} seconds, {len(valid_df)} rows remain")
+            
+            if len(valid_df) > 0:
+                # Calculate indices for array assignment
+                indices_start_time = time.time()
+                row_indices = [race_id_to_index[rid] for rid in valid_df['race_id']]
+                col_indices = valid_df['umaban'].values - 1  # Adjust for 0-indexing
+                indices_elapsed_time = time.time() - indices_start_time
+                logger.info(f"Calculated indices in {indices_elapsed_time:.2f} seconds")
+                
+                # Filter out invalid indices (where horse number exceeds array dimensions)
+                mask_start_time = time.time()
+                valid_mask = col_indices < horse_numbers.shape[1]
+                row_indices = np.array(row_indices)[valid_mask]
+                col_indices = col_indices[valid_mask]
+                odds_values = valid_df['min_odds'].values[valid_mask]
+                mask_elapsed_time = time.time() - mask_start_time
+                logger.info(f"Applied valid mask in {mask_elapsed_time:.2f} seconds, {np.sum(valid_mask)} valid entries")
+                
+                # Assign odds to the array using advanced indexing
+                assign_start_time = time.time()
+                odds_array[row_indices, col_indices] = odds_values
+                assign_elapsed_time = time.time() - assign_start_time
+                logger.info(f"Assigned values to array in {assign_elapsed_time:.2f} seconds")
+        
+            logger.info(f"Loaded fukusho odds for {len(valid_df)} horse-race combinations")
             
         except Exception as e:
             logger.error(f"Error loading fukusho odds: {e}")
+            logger.exception(e)
+            return np.full_like(horse_numbers, np.nan, dtype=np.float32)
             
+        total_elapsed_time = time.time() - start_time
+        logger.info(f"Total fukusho loading time: {total_elapsed_time:.2f} seconds")
         return odds_array
-    
+
     def _load_wakuren(self, race_ids: List[str], frame_numbers: np.ndarray, min_date: str, max_date: str) -> np.ndarray:
         """
         Load bracket quinella odds (枠連).
-        
-        Args:
-            race_ids: List of race IDs
-            frame_numbers: Array of frame numbers
-            min_date: Minimum date in YYYY-MM-DD format
-            max_date: Maximum date in YYYY-MM-DD format
-            
-        Returns:
-            Array of bracket quinella odds with shape (num_races, combinations)
+        枠連 is an unordered combination of frame numbers, including same-frame combinations.
         """
-        num_races = len(race_ids)
+        start_time = time.time()
+        logger.info(f"Beginning wakuren query...")
         
-        # For wakuren, we include same-frame combinations (e.g., 1-1, 2-2)
-        # Total combinations: max_frames * (max_frames + 1) / 2
-        max_frames = self.max_frame_number
-        num_combinations = (max_frames * (max_frames + 1)) // 2
-        
-        # Initialize odds array with NaN
-        odds_array = np.full((num_races, num_combinations), np.nan, dtype=np.float32)
-        
-        # Build race ID map
-        race_id_map = self._build_race_id_map(race_ids)
-        
-        # Create combination to index mapping
-        # For wakuren, we need to include same-frame combinations
-        combo_to_idx = {}
-        idx = 0
-        for frame1 in range(1, max_frames + 1):
-            for frame2 in range(frame1, max_frames + 1):
-                combo_to_idx[(frame1, frame2)] = idx
-                idx += 1
+        # Calculate number of possible combinations for wakuren (unordered pairs with replacement)
+        total_combinations = (self.max_frame_number * (self.max_frame_number + 1)) // 2
+        logger.info(f"Wakuren combinations: {total_combinations}")
         
         # Query to get the latest wakuren odds for each race
         query = """
@@ -369,14 +398,14 @@ class OddsLoader:
             SELECT 
                 kaisai_date,
                 keibajo_code,
-                kaisai_kai,
+                kaisai_kai, 
                 kaisai_nichime,
                 kyoso_bango,
                 wakuban_1,
                 wakuban_2,
                 odds,
                 ROW_NUMBER() OVER(PARTITION BY kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, wakuban_1, wakuban_2
-                                  ORDER BY happyo_datetime DESC) as rn
+                              ORDER BY happyo_datetime DESC) as rn
             FROM 
                 wakuren
             WHERE 
@@ -398,80 +427,124 @@ class OddsLoader:
         """
         
         try:
-            # Execute query
+            # Execute query and get results as DataFrame
+            query_start_time = time.time()
             results = self.db_ops.execute_query(query, params=[min_date, max_date], fetch_all=True, as_dict=True)
+            query_elapsed_time = time.time() - query_start_time
+            logger.info(f"Wakuren database query completed in {query_elapsed_time:.2f} seconds")
             
-            # Process results
-            for row in results:
-                # Convert date to string in YYYY-MM-DD format
-                date_str = row['kaisai_date']
-                if hasattr(date_str, 'strftime'):
-                    date_str = date_str.strftime('%Y-%m-%d')
+            if not results:
+                logger.info("No wakuren odds found for the specified races")
+                return np.full((len(race_ids), total_combinations), np.nan, dtype=np.float32)
+            
+            logger.info(f"Wakuren query returned {len(results)} rows")
                 
-                # Create key for race_id_map
-                key = (
-                    date_str,
-                    str(row['keibajo_code']).zfill(2),
-                    str(row['kaisai_kai']).zfill(2),
-                    str(row['kaisai_nichime']).zfill(2),
-                    str(row['kyoso_bango']).zfill(2)
-                )
+            df_start_time = time.time()
+            df = pd.DataFrame([dict(row) for row in results])
+            df_elapsed_time = time.time() - df_start_time
+            logger.info(f"Created pandas DataFrame in {df_elapsed_time:.2f} seconds")
+            
+            # Convert to numeric for calculations
+            convert_start_time = time.time()
+            df['wakuban_1'] = df['wakuban_1'].astype(int)
+            df['wakuban_2'] = df['wakuban_2'].astype(int)
+            df['odds'] = df['odds'].astype(float) / 10.0  # Convert to decimal odds
+            convert_elapsed_time = time.time() - convert_start_time
+            logger.info(f"Converted data types in {convert_elapsed_time:.2f} seconds")
+            
+            # Create a dictionary to map race_id to index in the array
+            index_start_time = time.time()
+            race_id_to_index = {race_id: idx for idx, race_id in enumerate(race_ids)}
+            index_elapsed_time = time.time() - index_start_time
+            logger.info(f"Created race_id to index mapping in {index_elapsed_time:.2f} seconds")
+            
+            # Convert kaisai_date to datetime if it's not already
+            date_start_time = time.time()
+            df['kaisai_date'] = pd.to_datetime(df['kaisai_date'])
+
+            # Then create race_id
+            df['race_id'] = df['kaisai_date'].dt.strftime('%Y%m%d') + df['keibajo_code'] + df['kaisai_kai'].astype(str).str.zfill(2) + df['kaisai_nichime'].astype(str).str.zfill(2) + df['kyoso_bango'].astype(str).str.zfill(2)
+            date_elapsed_time = time.time() - date_start_time
+            logger.info(f"Created race_id field in {date_elapsed_time:.2f} seconds")
+
+            # Initialize odds_array with NaN values
+            init_start_time = time.time()
+            odds_array = np.full((len(race_ids), total_combinations), np.nan, dtype=np.float32)
+            init_elapsed_time = time.time() - init_start_time
+            logger.info(f"Initialized odds array in {init_elapsed_time:.2f} seconds")
+            
+            # Filter df to only include race_ids that are in our list
+            filter_start_time = time.time()
+            valid_df = df[df['race_id'].isin(race_ids)].copy()
+            filter_elapsed_time = time.time() - filter_start_time
+            logger.info(f"Filtered DataFrame in {filter_elapsed_time:.2f} seconds, {len(valid_df)} rows remain")
+            
+            if len(valid_df) > 0:
+                # Create a vectorized function to compute the index in the flattened array for a wakuban pair
+                def pair_to_index(a, b):
+                    # Ensure a <= b for consistent indexing (wakuren includes same-frame combinations)
+                    a, b = min(a, b), max(a, b)
+                    # Formula for combination with replacement index
+                    return ((a - 1) * (2 * self.max_frame_number - a)) // 2 + (b - a)
                 
-                if key in race_id_map:
-                    race_idx = race_id_map[key]
-                    wakuban_1 = int(row['wakuban_1'])
-                    wakuban_2 = int(row['wakuban_2'])
-                    
-                    # Ensure wakuban_1 <= wakuban_2 for consistent ordering
-                    if wakuban_1 > wakuban_2:
-                        wakuban_1, wakuban_2 = wakuban_2, wakuban_1
-                    
-                    # Only process if both frame numbers are valid
-                    if 1 <= wakuban_1 <= max_frames and 1 <= wakuban_2 <= max_frames:
-                        combo_idx = combo_to_idx.get((wakuban_1, wakuban_2))
-                        odds_value = row['odds']
-                        
-                        if combo_idx is not None and odds_value is not None:
-                            odds_array[race_idx, combo_idx] = float(odds_value) / 10.0
-            
-            logger.info(f"Loaded wakuren odds for {len(results)} frame-race combinations")
-            
+                # Vectorize the pair_to_index function
+                index_function_start_time = time.time()
+                vectorized_pair_to_index = np.vectorize(pair_to_index)
+                
+                # Ensure wakuban_1 <= wakuban_2 for consistent indexing
+                valid_df['min_wakuban'] = valid_df[['wakuban_1', 'wakuban_2']].min(axis=1)
+                valid_df['max_wakuban'] = valid_df[['wakuban_1', 'wakuban_2']].max(axis=1)
+                index_function_elapsed_time = time.time() - index_function_start_time
+                logger.info(f"Prepared index function in {index_function_elapsed_time:.2f} seconds")
+                
+                # Calculate col_indices
+                indices_start_time = time.time()
+                col_indices = vectorized_pair_to_index(valid_df['min_wakuban'].values, valid_df['max_wakuban'].values)
+                
+                # Calculate row indices
+                row_indices = [race_id_to_index[rid] for rid in valid_df['race_id']]
+                row_indices = np.array(row_indices)
+                indices_elapsed_time = time.time() - indices_start_time
+                logger.info(f"Calculated indices in {indices_elapsed_time:.2f} seconds")
+                
+                # Filter out invalid indices
+                mask_start_time = time.time()
+                valid_mask = (col_indices >= 0) & (col_indices < total_combinations)
+                row_indices = row_indices[valid_mask]
+                col_indices = col_indices[valid_mask]
+                odds_values = valid_df['odds'].values[valid_mask]
+                mask_elapsed_time = time.time() - mask_start_time
+                logger.info(f"Applied valid mask in {mask_elapsed_time:.2f} seconds, {np.sum(valid_mask)} valid entries")
+                
+                # Assign odds to the array using advanced indexing
+                assign_start_time = time.time()
+                odds_array[row_indices, col_indices] = odds_values
+                assign_elapsed_time = time.time() - assign_start_time
+                logger.info(f"Assigned values to array in {assign_elapsed_time:.2f} seconds")
+        
+            logger.info(f"Loaded wakuren odds for {len(valid_df)} combinations across {len(valid_df['race_id'].unique())} races")
+        
         except Exception as e:
             logger.error(f"Error loading wakuren odds: {e}")
-            
+            logger.exception(e)
+            return np.full((len(race_ids), total_combinations), np.nan, dtype=np.float32)
+        
+        total_elapsed_time = time.time() - start_time
+        logger.info(f"Total wakuren loading time: {total_elapsed_time:.2f} seconds")
         return odds_array
-    
+
     def _load_umaren(self, race_ids: List[str], horse_numbers: np.ndarray, min_date: str, max_date: str) -> np.ndarray:
         """
         Load quinella odds (馬連).
-        
-        Args:
-            race_ids: List of race IDs
-            horse_numbers: Array of horse numbers
-            min_date: Minimum date in YYYY-MM-DD format
-            max_date: Maximum date in YYYY-MM-DD format
-            
-        Returns:
-            Array of quinella odds with shape (num_races, combinations)
+        馬連 is an unordered combination of two different horse numbers.
         """
-        num_races, max_horses = horse_numbers.shape
+        start_time = time.time()
+        logger.info(f"Beginning umaren query...")
         
-        # For umaren, we need nC2 combinations (order doesn't matter)
-        num_combinations = (max_horses * (max_horses - 1)) // 2
-        
-        # Initialize odds array with NaN
-        odds_array = np.full((num_races, num_combinations), np.nan, dtype=np.float32)
-        
-        # Build race ID map
-        race_id_map = self._build_race_id_map(race_ids)
-        
-        # Create combination to index mapping
-        combo_to_idx = {}
-        idx = 0
-        for horse1 in range(1, max_horses + 1):
-            for horse2 in range(horse1 + 1, max_horses + 1):
-                combo_to_idx[(horse1, horse2)] = idx
-                idx += 1
+        # Calculate number of possible combinations for umaren (unordered pairs)
+        max_horses = horse_numbers.shape[1]
+        num_combinations = max_horses * (max_horses - 1) // 2
+        logger.info(f"Umaren combinations: {num_combinations}")
         
         # Query to get the latest umaren odds for each race
         query = """
@@ -486,7 +559,7 @@ class OddsLoader:
                 umaban_2,
                 odds,
                 ROW_NUMBER() OVER(PARTITION BY kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, umaban_1, umaban_2
-                                  ORDER BY happyo_datetime DESC) as rn
+                              ORDER BY happyo_datetime DESC) as rn
             FROM 
                 umaren
             WHERE 
@@ -508,80 +581,127 @@ class OddsLoader:
         """
         
         try:
-            # Execute query
+            # Execute query and get results as DataFrame
+            query_start_time = time.time()
             results = self.db_ops.execute_query(query, params=[min_date, max_date], fetch_all=True, as_dict=True)
+            query_elapsed_time = time.time() - query_start_time
+            logger.info(f"Umaren database query completed in {query_elapsed_time:.2f} seconds")
             
-            # Process results
-            for row in results:
-                # Convert date to string in YYYY-MM-DD format
-                date_str = row['kaisai_date']
-                if hasattr(date_str, 'strftime'):
-                    date_str = date_str.strftime('%Y-%m-%d')
+            if not results:
+                logger.info("No umaren odds found for the specified races")
+                return np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
                 
-                # Create key for race_id_map
-                key = (
-                    date_str,
-                    str(row['keibajo_code']).zfill(2),
-                    str(row['kaisai_kai']).zfill(2),
-                    str(row['kaisai_nichime']).zfill(2),
-                    str(row['kyoso_bango']).zfill(2)
-                )
+            logger.info(f"Umaren query returned {len(results)} rows")
                 
-                if key in race_id_map:
-                    race_idx = race_id_map[key]
-                    umaban_1 = int(row['umaban_1'])
-                    umaban_2 = int(row['umaban_2'])
-                    
-                    # Ensure umaban_1 < umaban_2 for consistent ordering
-                    if umaban_1 > umaban_2:
-                        umaban_1, umaban_2 = umaban_2, umaban_1
-                    
-                    # Only process if both horse numbers are valid
-                    if 1 <= umaban_1 <= max_horses and 1 <= umaban_2 <= max_horses:
-                        combo_idx = combo_to_idx.get((umaban_1, umaban_2))
-                        odds_value = row['odds']
-                        
-                        if combo_idx is not None and odds_value is not None:
-                            odds_array[race_idx, combo_idx] = float(odds_value) / 10.0
+            df_start_time = time.time()
+            df = pd.DataFrame([dict(row) for row in results])
+            df_elapsed_time = time.time() - df_start_time
+            logger.info(f"Created pandas DataFrame in {df_elapsed_time:.2f} seconds")
             
-            logger.info(f"Loaded umaren odds for {len(results)} horse-race combinations")
+            # Convert to numeric for calculations
+            convert_start_time = time.time()
+            df['umaban_1'] = df['umaban_1'].astype(int)
+            df['umaban_2'] = df['umaban_2'].astype(int)
+            df['odds'] = df['odds'].astype(float) / 10.0  # Convert to decimal odds
+            convert_elapsed_time = time.time() - convert_start_time
+            logger.info(f"Converted data types in {convert_elapsed_time:.2f} seconds")
+            
+            # Create a dictionary to map race_id to index in the array
+            index_start_time = time.time()
+            race_id_to_index = {race_id: idx for idx, race_id in enumerate(race_ids)}
+            index_elapsed_time = time.time() - index_start_time
+            logger.info(f"Created race_id to index mapping in {index_elapsed_time:.2f} seconds")
+            
+            # Convert kaisai_date to datetime if it's not already
+            date_start_time = time.time()
+            df['kaisai_date'] = pd.to_datetime(df['kaisai_date'])
+
+            # Then create race_id as before
+            df['race_id'] = df['kaisai_date'].dt.strftime('%Y%m%d') + df['keibajo_code'] + df['kaisai_kai'].astype(str).str.zfill(2) + df['kaisai_nichime'].astype(str).str.zfill(2) + df['kyoso_bango'].astype(str).str.zfill(2)
+            date_elapsed_time = time.time() - date_start_time
+            logger.info(f"Created race_id field in {date_elapsed_time:.2f} seconds")
+
+            # Initialize odds_array with NaN values
+            init_start_time = time.time()
+            odds_array = np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
+            init_elapsed_time = time.time() - init_start_time
+            logger.info(f"Initialized odds array in {init_elapsed_time:.2f} seconds")
+            
+            # Filter df to only include race_ids that are in our list
+            filter_start_time = time.time()
+            valid_df = df[df['race_id'].isin(race_ids)].copy()
+            filter_elapsed_time = time.time() - filter_start_time
+            logger.info(f"Filtered DataFrame in {filter_elapsed_time:.2f} seconds, {len(valid_df)} rows remain")
+            
+            if len(valid_df) > 0:
+                # Create a function to compute the index in the flattened array for a horse pair
+                function_start_time = time.time()
+                def pair_to_index(a, b):
+                    # Ensure a < b for consistent indexing
+                    a, b = min(a, b), max(a, b)
+                    # Formula for indexing combinations: (n*(n-1)/2 - (n-a)*(n-a-1)/2 + b - a - 1)
+                    return (max_horses * (max_horses - 1) // 2) - ((max_horses - a) * (max_horses - a - 1) // 2) + (b - a - 1)
+                
+                # Vectorize the pair_to_index function
+                vectorized_pair_to_index = np.vectorize(pair_to_index)
+                function_elapsed_time = time.time() - function_start_time
+                logger.info(f"Created index function in {function_elapsed_time:.2f} seconds")
+                
+                # Ensure umaban_1 < umaban_2 for consistent indexing
+                min_max_start_time = time.time()
+                valid_df['min_umaban'] = valid_df[['umaban_1', 'umaban_2']].min(axis=1)
+                valid_df['max_umaban'] = valid_df[['umaban_1', 'umaban_2']].max(axis=1)
+                min_max_elapsed_time = time.time() - min_max_start_time
+                logger.info(f"Calculated min/max horse numbers in {min_max_elapsed_time:.2f} seconds")
+                
+                # Calculate col_indices
+                indices_start_time = time.time()
+                col_indices = vectorized_pair_to_index(valid_df['min_umaban'].values - 1, valid_df['max_umaban'].values - 1)
+                
+                # Calculate row indices
+                row_indices = [race_id_to_index[rid] for rid in valid_df['race_id']]
+                row_indices = np.array(row_indices)
+                indices_elapsed_time = time.time() - indices_start_time
+                logger.info(f"Calculated indices in {indices_elapsed_time:.2f} seconds")
+                
+                # Filter out invalid indices (where horse number exceeds array dimensions)
+                mask_start_time = time.time()
+                valid_mask = (col_indices >= 0) & (col_indices < num_combinations)
+                row_indices = np.array(row_indices)[valid_mask]
+                col_indices = col_indices[valid_mask]
+                odds_values = valid_df['odds'].values[valid_mask]
+                mask_elapsed_time = time.time() - mask_start_time
+                logger.info(f"Applied valid mask in {mask_elapsed_time:.2f} seconds, {np.sum(valid_mask)} valid entries")
+                
+                # Assign odds to the array using advanced indexing
+                assign_start_time = time.time()
+                odds_array[row_indices, col_indices] = odds_values
+                assign_elapsed_time = time.time() - assign_start_time
+                logger.info(f"Assigned values to array in {assign_elapsed_time:.2f} seconds")
+        
+            logger.info(f"Loaded umaren odds for {len(valid_df)} combinations across {len(valid_df['race_id'].unique())} races")
             
         except Exception as e:
             logger.error(f"Error loading umaren odds: {e}")
+            logger.exception(e)
+            return np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
             
+        total_elapsed_time = time.time() - start_time
+        logger.info(f"Total umaren loading time: {total_elapsed_time:.2f} seconds")
         return odds_array
-    
+
     def _load_wide(self, race_ids: List[str], horse_numbers: np.ndarray, min_date: str, max_date: str) -> np.ndarray:
         """
         Load quinella place odds (ワイド).
-        
-        Args:
-            race_ids: List of race IDs
-            horse_numbers: Array of horse numbers
-            min_date: Minimum date in YYYY-MM-DD format
-            max_date: Maximum date in YYYY-MM-DD format
-            
-        Returns:
-            Array of quinella place odds with shape (num_races, combinations)
+        ワイド is an unordered combination of two different horse numbers where both horses finish in top positions.
         """
-        num_races, max_horses = horse_numbers.shape
+        start_time = time.time()
+        logger.info(f"Beginning wide query...")
         
-        # For wide, we need nC2 combinations (order doesn't matter)
-        num_combinations = (max_horses * (max_horses - 1)) // 2
-        
-        # Initialize odds array with NaN
-        odds_array = np.full((num_races, num_combinations), np.nan, dtype=np.float32)
-        
-        # Build race ID map
-        race_id_map = self._build_race_id_map(race_ids)
-        
-        # Create combination to index mapping
-        combo_to_idx = {}
-        idx = 0
-        for horse1 in range(1, max_horses + 1):
-            for horse2 in range(horse1 + 1, max_horses + 1):
-                combo_to_idx[(horse1, horse2)] = idx
-                idx += 1
+        # Calculate number of possible combinations for wide (unordered pairs)
+        max_horses = horse_numbers.shape[1]
+        num_combinations = max_horses * (max_horses - 1) // 2
+        logger.info(f"Wide combinations: {num_combinations}")
         
         # Query to get the latest wide odds for each race
         query = """
@@ -596,7 +716,7 @@ class OddsLoader:
                 umaban_2,
                 min_odds,
                 ROW_NUMBER() OVER(PARTITION BY kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, umaban_1, umaban_2
-                                  ORDER BY happyo_datetime DESC) as rn
+                          ORDER BY happyo_datetime DESC) as rn
             FROM 
                 wide
             WHERE 
@@ -616,83 +736,129 @@ class OddsLoader:
         WHERE 
             rn = 1
         """
-        
+    
         try:
-            # Execute query
+            # Execute query and get results as DataFrame
+            query_start_time = time.time()
             results = self.db_ops.execute_query(query, params=[min_date, max_date], fetch_all=True, as_dict=True)
+            query_elapsed_time = time.time() - query_start_time
+            logger.info(f"Wide database query completed in {query_elapsed_time:.2f} seconds")
             
-            # Process results (use min_odds as specified in requirements)
-            for row in results:
-                # Convert date to string in YYYY-MM-DD format
-                date_str = row['kaisai_date']
-                if hasattr(date_str, 'strftime'):
-                    date_str = date_str.strftime('%Y-%m-%d')
+            if not results:
+                logger.info("No wide odds found for the specified races")
+                return np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
+            
+            logger.info(f"Wide query returned {len(results)} rows")
+            
+            df_start_time = time.time()
+            df = pd.DataFrame([dict(row) for row in results])
+            df_elapsed_time = time.time() - df_start_time
+            logger.info(f"Created pandas DataFrame in {df_elapsed_time:.2f} seconds")
+            
+            # Convert to numeric for calculations
+            convert_start_time = time.time()
+            df['umaban_1'] = df['umaban_1'].astype(int)
+            df['umaban_2'] = df['umaban_2'].astype(int)
+            df['min_odds'] = df['min_odds'].astype(float) / 10.0  # Convert to decimal odds
+            convert_elapsed_time = time.time() - convert_start_time
+            logger.info(f"Converted data types in {convert_elapsed_time:.2f} seconds")
+            
+            # Create a dictionary to map race_id to index in the array
+            index_start_time = time.time()
+            race_id_to_index = {race_id: idx for idx, race_id in enumerate(race_ids)}
+            index_elapsed_time = time.time() - index_start_time
+            logger.info(f"Created race_id to index mapping in {index_elapsed_time:.2f} seconds")
+            
+            # Convert kaisai_date to datetime if it's not already
+            date_start_time = time.time()
+            df['kaisai_date'] = pd.to_datetime(df['kaisai_date'])
+
+            # Then create race_id as before
+            df['race_id'] = df['kaisai_date'].dt.strftime('%Y%m%d') + df['keibajo_code'] + df['kaisai_kai'].astype(str).str.zfill(2) + df['kaisai_nichime'].astype(str).str.zfill(2) + df['kyoso_bango'].astype(str).str.zfill(2)
+            date_elapsed_time = time.time() - date_start_time
+            logger.info(f"Created race_id field in {date_elapsed_time:.2f} seconds")
+
+            # Initialize odds_array with NaN values
+            init_start_time = time.time()
+            odds_array = np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
+            init_elapsed_time = time.time() - init_start_time
+            logger.info(f"Initialized odds array in {init_elapsed_time:.2f} seconds")
+            
+            # Filter df to only include race_ids that are in our list
+            filter_start_time = time.time()
+            valid_df = df[df['race_id'].isin(race_ids)].copy()
+            filter_elapsed_time = time.time() - filter_start_time
+            logger.info(f"Filtered DataFrame in {filter_elapsed_time:.2f} seconds, {len(valid_df)} rows remain")
+            
+            if len(valid_df) > 0:
+                # Create a function to compute the index in the flattened array for a horse pair
+                function_start_time = time.time()
+                def pair_to_index(a, b):
+                    # Ensure a < b for consistent indexing
+                    a, b = min(a, b), max(a, b)
+                    # Formula for indexing combinations: (n*(n-1)/2 - (n-a)*(n-a-1)/2 + b - a - 1)
+                    return (max_horses * (max_horses - 1) // 2) - ((max_horses - a) * (max_horses - a - 1) // 2) + (b - a - 1)
                 
-                # Create key for race_id_map
-                key = (
-                    date_str,
-                    str(row['keibajo_code']).zfill(2),
-                    str(row['kaisai_kai']).zfill(2),
-                    str(row['kaisai_nichime']).zfill(2),
-                    str(row['kyoso_bango']).zfill(2)
-                )
+                # Vectorize the pair_to_index function
+                vectorized_pair_to_index = np.vectorize(pair_to_index)
+                function_elapsed_time = time.time() - function_start_time
+                logger.info(f"Created index function in {function_elapsed_time:.2f} seconds")
                 
-                if key in race_id_map:
-                    race_idx = race_id_map[key]
-                    umaban_1 = int(row['umaban_1'])
-                    umaban_2 = int(row['umaban_2'])
-                    
-                    # Ensure umaban_1 < umaban_2 for consistent ordering
-                    if umaban_1 > umaban_2:
-                        umaban_1, umaban_2 = umaban_2, umaban_1
-                    
-                    # Only process if both horse numbers are valid
-                    if 1 <= umaban_1 <= max_horses and 1 <= umaban_2 <= max_horses:
-                        combo_idx = combo_to_idx.get((umaban_1, umaban_2))
-                        odds_value = row['min_odds']  # Use min_odds as specified
-                        
-                        if combo_idx is not None and odds_value is not None:
-                            odds_array[race_idx, combo_idx] = float(odds_value) / 10.0
-            
-            logger.info(f"Loaded wide odds for {len(results)} horse-race combinations")
-            
+                # Ensure umaban_1 < umaban_2 for consistent indexing
+                min_max_start_time = time.time()
+                valid_df['min_umaban'] = valid_df[['umaban_1', 'umaban_2']].min(axis=1)
+                valid_df['max_umaban'] = valid_df[['umaban_1', 'umaban_2']].max(axis=1)
+                min_max_elapsed_time = time.time() - min_max_start_time
+                logger.info(f"Calculated min/max horse numbers in {min_max_elapsed_time:.2f} seconds")
+                
+                # Calculate col_indices
+                indices_start_time = time.time()
+                col_indices = vectorized_pair_to_index(valid_df['min_umaban'].values - 1, valid_df['max_umaban'].values - 1)
+                
+                # Calculate row indices
+                row_indices = [race_id_to_index[rid] for rid in valid_df['race_id']]
+                row_indices = np.array(row_indices)
+                indices_elapsed_time = time.time() - indices_start_time
+                logger.info(f"Calculated indices in {indices_elapsed_time:.2f} seconds")
+                
+                # Filter out invalid indices (where horse number exceeds array dimensions)
+                mask_start_time = time.time()
+                valid_mask = (col_indices >= 0) & (col_indices < num_combinations)
+                row_indices = np.array(row_indices)[valid_mask]
+                col_indices = col_indices[valid_mask]
+                odds_values = valid_df['min_odds'].values[valid_mask]
+                mask_elapsed_time = time.time() - mask_start_time
+                logger.info(f"Applied valid mask in {mask_elapsed_time:.2f} seconds, {np.sum(valid_mask)} valid entries")
+                
+                # Assign odds to the array using advanced indexing
+                assign_start_time = time.time()
+                odds_array[row_indices, col_indices] = odds_values
+                assign_elapsed_time = time.time() - assign_start_time
+                logger.info(f"Assigned values to array in {assign_elapsed_time:.2f} seconds")
+    
+            logger.info(f"Loaded wide odds for {len(valid_df)} combinations across {len(valid_df['race_id'].unique())} races")
+    
         except Exception as e:
             logger.error(f"Error loading wide odds: {e}")
-            
-        return odds_array
+            logger.exception(e)
+            return np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
     
+        total_elapsed_time = time.time() - start_time
+        logger.info(f"Total wide loading time: {total_elapsed_time:.2f} seconds")
+        return odds_array
+
     def _load_umatan(self, race_ids: List[str], horse_numbers: np.ndarray, min_date: str, max_date: str) -> np.ndarray:
         """
         Load exacta odds (馬単).
-        
-        Args:
-            race_ids: List of race IDs
-            horse_numbers: Array of horse numbers
-            min_date: Minimum date in YYYY-MM-DD format
-            max_date: Maximum date in YYYY-MM-DD format
-            
-        Returns:
-            Array of exacta odds with shape (num_races, combinations)
+        馬単 is an ordered combination of two different horse numbers.
         """
-        num_races, max_horses = horse_numbers.shape
+        start_time = time.time()
+        logger.info(f"Beginning umatan query...")
         
-        # For umatan, we need nP2 combinations (order matters)
+        # Calculate number of possible combinations for umatan (ordered pairs)
+        max_horses = horse_numbers.shape[1]
         num_combinations = max_horses * (max_horses - 1)
-        
-        # Initialize odds array with NaN
-        odds_array = np.full((num_races, num_combinations), np.nan, dtype=np.float32)
-        
-        # Build race ID map
-        race_id_map = self._build_race_id_map(race_ids)
-        
-        # Create combination to index mapping
-        combo_to_idx = {}
-        idx = 0
-        for horse1 in range(1, max_horses + 1):
-            for horse2 in range(1, max_horses + 1):
-                if horse1 != horse2:
-                    combo_to_idx[(horse1, horse2)] = idx
-                    idx += 1
+        logger.info(f"Umatan combinations: {num_combinations}")
         
         # Query to get the latest umatan odds for each race
         query = """
@@ -707,7 +873,7 @@ class OddsLoader:
                 umaban_2,
                 odds,
                 ROW_NUMBER() OVER(PARTITION BY kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, umaban_1, umaban_2
-                                  ORDER BY happyo_datetime DESC) as rn
+                          ORDER BY happyo_datetime DESC) as rn
             FROM 
                 umatan
             WHERE 
@@ -727,79 +893,123 @@ class OddsLoader:
         WHERE 
             rn = 1
         """
-        
+
         try:
-            # Execute query
+            # Execute query and get results as DataFrame
+            query_start_time = time.time()
             results = self.db_ops.execute_query(query, params=[min_date, max_date], fetch_all=True, as_dict=True)
+            query_elapsed_time = time.time() - query_start_time
+            logger.info(f"Umatan database query completed in {query_elapsed_time:.2f} seconds")
             
-            # Process results
-            for row in results:
-                # Convert date to string in YYYY-MM-DD format
-                date_str = row['kaisai_date']
-                if hasattr(date_str, 'strftime'):
-                    date_str = date_str.strftime('%Y-%m-%d')
+            if not results:
+                logger.info("No umatan odds found for the specified races")
+                return np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
                 
-                # Create key for race_id_map
-                key = (
-                    date_str,
-                    str(row['keibajo_code']).zfill(2),
-                    str(row['kaisai_kai']).zfill(2),
-                    str(row['kaisai_nichime']).zfill(2),
-                    str(row['kyoso_bango']).zfill(2)
-                )
+            logger.info(f"Umatan query returned {len(results)} rows")
                 
-                if key in race_id_map:
-                    race_idx = race_id_map[key]
-                    umaban_1 = int(row['umaban_1'])
-                    umaban_2 = int(row['umaban_2'])
-                    
-                    # For umatan, order matters
-                    if 1 <= umaban_1 <= max_horses and 1 <= umaban_2 <= max_horses and umaban_1 != umaban_2:
-                        combo_idx = combo_to_idx.get((umaban_1, umaban_2))
-                        odds_value = row['odds']
-                        
-                        if combo_idx is not None and odds_value is not None:
-                            odds_array[race_idx, combo_idx] = float(odds_value) / 10.0
+            df_start_time = time.time()
+            df = pd.DataFrame([dict(row) for row in results])
+            df_elapsed_time = time.time() - df_start_time
+            logger.info(f"Created pandas DataFrame in {df_elapsed_time:.2f} seconds")
             
-            logger.info(f"Loaded umatan odds for {len(results)} horse-race combinations")
+            # Convert to numeric for calculations
+            convert_start_time = time.time()
+            df['umaban_1'] = df['umaban_1'].astype(int)
+            df['umaban_2'] = df['umaban_2'].astype(int)
+            df['odds'] = df['odds'].astype(float) / 10.0  # Convert to decimal odds
+            convert_elapsed_time = time.time() - convert_start_time
+            logger.info(f"Converted data types in {convert_elapsed_time:.2f} seconds")
+            
+            # Create a dictionary to map race_id to index in the array
+            index_start_time = time.time()
+            race_id_to_index = {race_id: idx for idx, race_id in enumerate(race_ids)}
+            index_elapsed_time = time.time() - index_start_time
+            logger.info(f"Created race_id to index mapping in {index_elapsed_time:.2f} seconds")
+            
+            # Convert kaisai_date to datetime if it's not already
+            date_start_time = time.time()
+            df['kaisai_date'] = pd.to_datetime(df['kaisai_date'])
+
+            # Then create race_id as before
+            df['race_id'] = df['kaisai_date'].dt.strftime('%Y%m%d') + df['keibajo_code'] + df['kaisai_kai'].astype(str).str.zfill(2) + df['kaisai_nichime'].astype(str).str.zfill(2) + df['kyoso_bango'].astype(str).str.zfill(2)
+            date_elapsed_time = time.time() - date_start_time
+            logger.info(f"Created race_id field in {date_elapsed_time:.2f} seconds")
+
+            # Initialize odds_array with NaN values
+            init_start_time = time.time()
+            odds_array = np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
+            init_elapsed_time = time.time() - init_start_time
+            logger.info(f"Initialized odds array in {init_elapsed_time:.2f} seconds")
+            
+            # Filter df to only include race_ids that are in our list
+            filter_start_time = time.time()
+            valid_df = df[df['race_id'].isin(race_ids)].copy()
+            filter_elapsed_time = time.time() - filter_start_time
+            logger.info(f"Filtered DataFrame in {filter_elapsed_time:.2f} seconds, {len(valid_df)} rows remain")
+            
+            if len(valid_df) > 0:
+                # Create a function to compute the index in the flattened array for an ordered horse pair
+                function_start_time = time.time()
+                def ordered_pair_to_index(a, b):
+                    # Convert to 0-indexed
+                    a_idx = a - 1
+                    b_idx = b - 1
+                    # Formula for ordered pairs: a_idx * (max_horses - 1) + (b_idx - (b_idx > a_idx))
+                    return a_idx * (max_horses - 1) + (b_idx - (b_idx > a_idx))
+        
+                # Vectorize the ordered_pair_to_index function
+                vectorized_ordered_pair_to_index = np.vectorize(ordered_pair_to_index)
+                function_elapsed_time = time.time() - function_start_time
+                logger.info(f"Created index function in {function_elapsed_time:.2f} seconds")
+                
+                # Calculate col_indices for the ordered pairs
+                indices_start_time = time.time()
+                col_indices = vectorized_ordered_pair_to_index(valid_df['umaban_1'].values, valid_df['umaban_2'].values)
+                
+                # Calculate row indices
+                row_indices = [race_id_to_index[rid] for rid in valid_df['race_id']]
+                row_indices = np.array(row_indices)
+                indices_elapsed_time = time.time() - indices_start_time
+                logger.info(f"Calculated indices in {indices_elapsed_time:.2f} seconds")
+                
+                # Filter out invalid indices
+                mask_start_time = time.time()
+                valid_mask = (col_indices >= 0) & (col_indices < num_combinations)
+                row_indices = row_indices[valid_mask]
+                col_indices = col_indices[valid_mask]
+                odds_values = valid_df['odds'].values[valid_mask]
+                mask_elapsed_time = time.time() - mask_start_time
+                logger.info(f"Applied valid mask in {mask_elapsed_time:.2f} seconds, {np.sum(valid_mask)} valid entries")
+                
+                # Assign odds to the array using advanced indexing
+                assign_start_time = time.time()
+                odds_array[row_indices, col_indices] = odds_values
+                assign_elapsed_time = time.time() - assign_start_time
+                logger.info(f"Assigned values to array in {assign_elapsed_time:.2f} seconds")
+            
+            logger.info(f"Loaded umatan odds for {len(valid_df)} combinations across {len(valid_df['race_id'].unique())} races")
             
         except Exception as e:
             logger.error(f"Error loading umatan odds: {e}")
+            logger.exception(e)
+            return np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
             
+        total_elapsed_time = time.time() - start_time
+        logger.info(f"Total umatan loading time: {total_elapsed_time:.2f} seconds")
         return odds_array
-    
+
     def _load_sanrenpuku(self, race_ids: List[str], horse_numbers: np.ndarray, min_date: str, max_date: str) -> np.ndarray:
         """
         Load trio odds (三連複).
-        
-        Args:
-            race_ids: List of race IDs
-            horse_numbers: Array of horse numbers
-            min_date: Minimum date in YYYY-MM-DD format
-            max_date: Maximum date in YYYY-MM-DD format
-            
-        Returns:
-            Array of trio odds with shape (num_races, combinations)
+        三連複 is an unordered combination of three different horse numbers.
         """
-        num_races, max_horses = horse_numbers.shape
+        start_time = time.time()
+        logger.info(f"Beginning sanrenpuku query...")
         
-        # For sanrenpuku, we need nC3 combinations (order doesn't matter)
-        num_combinations = (max_horses * (max_horses - 1) * (max_horses - 2)) // 6
-        
-        # Initialize odds array with NaN
-        odds_array = np.full((num_races, num_combinations), np.nan, dtype=np.float32)
-        
-        # Build race ID map
-        race_id_map = self._build_race_id_map(race_ids)
-        
-        # Create combination to index mapping
-        combo_to_idx = {}
-        idx = 0
-        for horse1 in range(1, max_horses + 1):
-            for horse2 in range(horse1 + 1, max_horses + 1):
-                for horse3 in range(horse2 + 1, max_horses + 1):
-                    combo_to_idx[(horse1, horse2, horse3)] = idx
-                    idx += 1
+        # Calculate number of possible combinations for sanrenpuku (unordered triplets)
+        max_horses = horse_numbers.shape[1]
+        num_combinations = max_horses * (max_horses - 1) * (max_horses - 2) // 6
+        logger.info(f"Sanrenpuku combinations: {num_combinations}")
         
         # Query to get the latest sanrenpuku odds for each race
         query = """
@@ -815,7 +1025,7 @@ class OddsLoader:
                 umaban_3,
                 odds,
                 ROW_NUMBER() OVER(PARTITION BY kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, umaban_1, umaban_2, umaban_3
-                                  ORDER BY happyo_datetime DESC) as rn
+                          ORDER BY happyo_datetime DESC) as rn
             FROM 
                 sanrenpuku
             WHERE 
@@ -836,91 +1046,127 @@ class OddsLoader:
         WHERE 
             rn = 1
         """
-        
+
         try:
-            # Execute query
+            # Execute query and get results as DataFrame
+            query_start_time = time.time()
             results = self.db_ops.execute_query(query, params=[min_date, max_date], fetch_all=True, as_dict=True)
+            query_elapsed_time = time.time() - query_start_time
+            logger.info(f"Sanrenpuku database query completed in {query_elapsed_time:.2f} seconds")
             
-            # Process results
-            for row in results:
-                # Convert date to string in YYYY-MM-DD format
-                date_str = row['kaisai_date']
-                if hasattr(date_str, 'strftime'):
-                    date_str = date_str.strftime('%Y-%m-%d')
+            if not results:
+                logger.info("No sanrenpuku odds found for the specified races")
+                return np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
+            
+            logger.info(f"Sanrenpuku query returned {len(results)} rows")
+            
+            df_start_time = time.time()
+            df = pd.DataFrame([dict(row) for row in results])
+            df_elapsed_time = time.time() - df_start_time
+            logger.info(f"Created pandas DataFrame in {df_elapsed_time:.2f} seconds")
+            
+            # Convert to numeric for calculations
+            convert_start_time = time.time()
+            df['umaban_1'] = df['umaban_1'].astype(int)
+            df['umaban_2'] = df['umaban_2'].astype(int)
+            df['umaban_3'] = df['umaban_3'].astype(int)
+            df['odds'] = df['odds'].astype(float) / 10.0  # Convert to decimal odds
+            convert_elapsed_time = time.time() - convert_start_time
+            logger.info(f"Converted data types in {convert_elapsed_time:.2f} seconds")
+            
+            # Create a dictionary to map race_id to index in the array
+            index_start_time = time.time()
+            race_id_to_index = {race_id: idx for idx, race_id in enumerate(race_ids)}
+            index_elapsed_time = time.time() - index_start_time
+            logger.info(f"Created race_id to index mapping in {index_elapsed_time:.2f} seconds")
+            
+            # Convert kaisai_date to datetime if it's not already
+            date_start_time = time.time()
+            df['kaisai_date'] = pd.to_datetime(df['kaisai_date'])
+
+            # Then create race_id as before
+            df['race_id'] = df['kaisai_date'].dt.strftime('%Y%m%d') + df['keibajo_code'] + df['kaisai_kai'].astype(str).str.zfill(2) + df['kaisai_nichime'].astype(str).str.zfill(2) + df['kyoso_bango'].astype(str).str.zfill(2)
+            date_elapsed_time = time.time() - date_start_time
+            logger.info(f"Created race_id field in {date_elapsed_time:.2f} seconds")
+
+            # Initialize odds_array with NaN values
+            init_start_time = time.time()
+            odds_array = np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
+            init_elapsed_time = time.time() - init_start_time
+            logger.info(f"Initialized odds array in {init_elapsed_time:.2f} seconds")
+            
+            # Filter df to only include race_ids that are in our list
+            filter_start_time = time.time()
+            valid_df = df[df['race_id'].isin(race_ids)].copy()
+            filter_elapsed_time = time.time() - filter_start_time
+            logger.info(f"Filtered DataFrame in {filter_elapsed_time:.2f} seconds, {len(valid_df)} rows remain")
+            
+            if len(valid_df) > 0:
+                # Sort the horse numbers for each combination to ensure consistent indexing
+                sort_start_time = time.time()
+                sorted_values = np.sort(valid_df[['umaban_1', 'umaban_2', 'umaban_3']].values, axis=1)
+                valid_df['umaban_min'] = sorted_values[:, 0]
+                valid_df['umaban_mid'] = sorted_values[:, 1]
+                valid_df['umaban_max'] = sorted_values[:, 2]
+                sort_elapsed_time = time.time() - sort_start_time
+                logger.info(f"Sorted horse numbers in {sort_elapsed_time:.2f} seconds")
                 
-                # Create key for race_id_map
-                key = (
-                    date_str,
-                    str(row['keibajo_code']).zfill(2),
-                    str(row['kaisai_kai']).zfill(2),
-                    str(row['kaisai_nichime']).zfill(2),
-                    str(row['kyoso_bango']).zfill(2)
-                )
+                # Formula for indexing combinations of 3 elements from n elements (vectorized)
+                indices_start_time = time.time()
+                n = max_horses
+                a = valid_df['umaban_min'].values - 1  # Convert to 0-indexed
+                b = valid_df['umaban_mid'].values - 1
+                c = valid_df['umaban_max'].values - 1
                 
-                if key in race_id_map:
-                    race_idx = race_id_map[key]
-                    umaban_1 = int(row['umaban_1'])
-                    umaban_2 = int(row['umaban_2'])
-                    umaban_3 = int(row['umaban_3'])
-                    
-                    # Sort to get canonical ordering
-                    umabans = sorted([umaban_1, umaban_2, umaban_3])
-                    
-                    # Only process if all three horse numbers are valid and different
-                    if (1 <= umabans[0] <= max_horses and 
-                        1 <= umabans[1] <= max_horses and 
-                        1 <= umabans[2] <= max_horses and 
-                        umabans[0] < umabans[1] < umabans[2]):
-                        
-                        combo_idx = combo_to_idx.get(tuple(umabans))
-                        odds_value = row['odds']
-                        
-                        if combo_idx is not None and odds_value is not None:
-                            odds_array[race_idx, combo_idx] = float(odds_value) / 10.0
-            
-            logger.info(f"Loaded sanrenpuku odds for {len(results)} horse-race combinations")
-            
+                col_indices = ((n*(n-1)*(n-2)//6) - 
+                            ((n-a)*(n-a-1)*(n-a-2)//6) + 
+                            ((n-a-1)*(n-a-2)//2) - 
+                            ((n-b)*(n-b-1)//2) + 
+                            (c-b-1))
+                
+                # Calculate row indices
+                row_indices = np.array([race_id_to_index[rid] for rid in valid_df['race_id']])
+                indices_elapsed_time = time.time() - indices_start_time
+                logger.info(f"Calculated indices in {indices_elapsed_time:.2f} seconds")
+                
+                # Filter out invalid indices
+                mask_start_time = time.time()
+                valid_mask = (col_indices >= 0) & (col_indices < num_combinations)
+                row_indices = row_indices[valid_mask]
+                col_indices = col_indices[valid_mask]
+                odds_values = valid_df['odds'].values[valid_mask]
+                mask_elapsed_time = time.time() - mask_start_time
+                logger.info(f"Applied valid mask in {mask_elapsed_time:.2f} seconds, {np.sum(valid_mask)} valid entries")
+                
+                # Assign odds to the array using advanced indexing
+                assign_start_time = time.time()
+                odds_array[row_indices, col_indices] = odds_values
+                assign_elapsed_time = time.time() - assign_start_time
+                logger.info(f"Assigned values to array in {assign_elapsed_time:.2f} seconds")
+
+            logger.info(f"Loaded sanrenpuku odds for {len(valid_df)} combinations across {len(valid_df['race_id'].unique())} races")
+
         except Exception as e:
             logger.error(f"Error loading sanrenpuku odds: {e}")
-            
+            logger.exception(e)
+            return np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
+        
+        total_elapsed_time = time.time() - start_time
+        logger.info(f"Total sanrenpuku loading time: {total_elapsed_time:.2f} seconds")
         return odds_array
-    
+
     def _load_sanrentan(self, race_ids: List[str], horse_numbers: np.ndarray, min_date: str, max_date: str) -> np.ndarray:
         """
         Load trifecta odds (三連単).
-        
-        Args:
-            race_ids: List of race IDs
-            horse_numbers: Array of horse numbers
-            min_date: Minimum date in YYYY-MM-DD format
-            max_date: Maximum date in YYYY-MM-DD format
-            
-        Returns:
-            Array of trifecta odds with shape (num_races, combinations)
+        三連単 is an ordered combination of three different horse numbers.
         """
-        num_races, max_horses = horse_numbers.shape
+        start_time = time.time()
+        logger.info(f"Beginning sanrentan query...")
         
-        # For sanrentan, we need nP3 combinations (order matters)
+        # Calculate number of possible combinations for sanrentan (ordered triplets)
+        max_horses = horse_numbers.shape[1]
         num_combinations = max_horses * (max_horses - 1) * (max_horses - 2)
-        
-        # Initialize odds array with NaN
-        odds_array = np.full((num_races, num_combinations), np.nan, dtype=np.float32)
-        
-        # Build race ID map
-        race_id_map = self._build_race_id_map(race_ids)
-        
-        # Create combination to index mapping
-        combo_to_idx = {}
-        idx = 0
-        for horse1 in range(1, max_horses + 1):
-            for horse2 in range(1, max_horses + 1):
-                if horse2 == horse1:
-                    continue
-                for horse3 in range(1, max_horses + 1):
-                    if horse3 == horse1 or horse3 == horse2:
-                        continue
-                    combo_to_idx[(horse1, horse2, horse3)] = idx
-                    idx += 1
+        logger.info(f"Sanrentan combinations: {num_combinations}")
         
         # Query to get the latest sanrentan odds for each race
         query = """
@@ -936,7 +1182,7 @@ class OddsLoader:
                 umaban_3,
                 odds,
                 ROW_NUMBER() OVER(PARTITION BY kaisai_date, keibajo_code, kaisai_kai, kaisai_nichime, kyoso_bango, umaban_1, umaban_2, umaban_3
-                                  ORDER BY happyo_datetime DESC) as rn
+                          ORDER BY happyo_datetime DESC) as rn
             FROM 
                 sanrentan
             WHERE 
@@ -957,48 +1203,111 @@ class OddsLoader:
         WHERE 
             rn = 1
         """
-        
+
         try:
-            # Execute query
+            # Execute query and get results as DataFrame
+            query_start_time = time.time()
             results = self.db_ops.execute_query(query, params=[min_date, max_date], fetch_all=True, as_dict=True)
+            query_elapsed_time = time.time() - query_start_time
+            logger.info(f"Sanrentan database query completed in {query_elapsed_time:.2f} seconds")
             
-            # Process results
-            for row in results:
-                # Convert date to string in YYYY-MM-DD format
-                date_str = row['kaisai_date']
-                if hasattr(date_str, 'strftime'):
-                    date_str = date_str.strftime('%Y-%m-%d')
+            if not results:
+                logger.info("No sanrentan odds found for the specified races")
+                return np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
+            
+            logger.info(f"Sanrentan query returned {len(results)} rows")
+            
+            df_start_time = time.time()
+            df = pd.DataFrame([dict(row) for row in results])
+            df_elapsed_time = time.time() - df_start_time
+            logger.info(f"Created pandas DataFrame in {df_elapsed_time:.2f} seconds")
+            
+            # Convert to numeric for calculations
+            convert_start_time = time.time()
+            df['umaban_1'] = df['umaban_1'].astype(int)
+            df['umaban_2'] = df['umaban_2'].astype(int)
+            df['umaban_3'] = df['umaban_3'].astype(int)
+            df['odds'] = df['odds'].astype(float) / 10.0  # Convert to decimal odds
+            convert_elapsed_time = time.time() - convert_start_time
+            logger.info(f"Converted data types in {convert_elapsed_time:.2f} seconds")
+            
+            # Create a dictionary to map race_id to index in the array
+            index_start_time = time.time()
+            race_id_to_index = {race_id: idx for idx, race_id in enumerate(race_ids)}
+            index_elapsed_time = time.time() - index_start_time
+            logger.info(f"Created race_id to index mapping in {index_elapsed_time:.2f} seconds")
+            
+            # Convert kaisai_date to datetime if it's not already
+            date_start_time = time.time()
+            df['kaisai_date'] = pd.to_datetime(df['kaisai_date'])
+
+            # Then create race_id as before
+            df['race_id'] = df['kaisai_date'].dt.strftime('%Y%m%d') + df['keibajo_code'] + df['kaisai_kai'].astype(str).str.zfill(2) + df['kaisai_nichime'].astype(str).str.zfill(2) + df['kyoso_bango'].astype(str).str.zfill(2)
+            date_elapsed_time = time.time() - date_start_time
+            logger.info(f"Created race_id field in {date_elapsed_time:.2f} seconds")
+
+            # Initialize odds_array with NaN values
+            init_start_time = time.time()
+            odds_array = np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
+            init_elapsed_time = time.time() - init_start_time
+            logger.info(f"Initialized odds array in {init_elapsed_time:.2f} seconds")
+            
+            # Filter df to only include race_ids that are in our list
+            filter_start_time = time.time()
+            valid_df = df[df['race_id'].isin(race_ids)].copy()
+            filter_elapsed_time = time.time() - filter_start_time
+            logger.info(f"Filtered DataFrame in {filter_elapsed_time:.2f} seconds, {len(valid_df)} rows remain")
+            
+            if len(valid_df) > 0:
+                # Get the horse numbers as 0-indexed values
+                indices_start_time = time.time()
+                a_idx = valid_df['umaban_1'].values - 1
+                b_idx = valid_df['umaban_2'].values - 1
+                c_idx = valid_df['umaban_3'].values - 1
                 
-                # Create key for race_id_map
-                key = (
-                    date_str,
-                    str(row['keibajo_code']).zfill(2),
-                    str(row['kaisai_kai']).zfill(2),
-                    str(row['kaisai_nichime']).zfill(2),
-                    str(row['kyoso_bango']).zfill(2)
-                )
+                # Create adjustment values for the second index
+                b_adj = (b_idx > a_idx).astype(int)
                 
-                if key in race_id_map:
-                    race_idx = race_id_map[key]
-                    umaban_1 = int(row['umaban_1'])
-                    umaban_2 = int(row['umaban_2'])
-                    umaban_3 = int(row['umaban_3'])
-                    
-                    # For sanrentan, order matters
-                    if (1 <= umaban_1 <= max_horses and 
-                        1 <= umaban_2 <= max_horses and 
-                        1 <= umaban_3 <= max_horses and 
-                        umaban_1 != umaban_2 and umaban_1 != umaban_3 and umaban_2 != umaban_3):
-                        
-                        combo_idx = combo_to_idx.get((umaban_1, umaban_2, umaban_3))
-                        odds_value = row['odds']
-                        
-                        if combo_idx is not None and odds_value is not None:
-                            odds_array[race_idx, combo_idx] = float(odds_value) / 10.0
-            
-            logger.info(f"Loaded sanrentan odds for {len(results)} horse-race combinations")
-            
+                # Create adjustment values for the third index
+                c_adj1 = (c_idx > a_idx).astype(int)
+                c_adj2 = (c_idx > b_idx).astype(int)
+                
+                # Compute adjusted indices
+                adjusted_b_idx = b_idx - b_adj
+                adjusted_c_idx = c_idx - c_adj1 - c_adj2
+                
+                # Calculate column indices using the formula for ordered triplets
+                col_indices = (a_idx * (max_horses - 1) * (max_horses - 2) + 
+                              adjusted_b_idx * (max_horses - 2) + 
+                              adjusted_c_idx)
+                
+                # Calculate row indices
+                row_indices = np.array([race_id_to_index[rid] for rid in valid_df['race_id']])
+                indices_elapsed_time = time.time() - indices_start_time
+                logger.info(f"Calculated indices in {indices_elapsed_time:.2f} seconds")
+                
+                # Filter out invalid indices
+                mask_start_time = time.time()
+                valid_mask = (col_indices >= 0) & (col_indices < num_combinations)
+                row_indices = row_indices[valid_mask]
+                col_indices = col_indices[valid_mask]
+                odds_values = valid_df['odds'].values[valid_mask]
+                mask_elapsed_time = time.time() - mask_start_time
+                logger.info(f"Applied valid mask in {mask_elapsed_time:.2f} seconds, {np.sum(valid_mask)} valid entries")
+                
+                # Assign odds to the array using advanced indexing
+                assign_start_time = time.time()
+                odds_array[row_indices, col_indices] = odds_values
+                assign_elapsed_time = time.time() - assign_start_time
+                logger.info(f"Assigned values to array in {assign_elapsed_time:.2f} seconds")
+
+            logger.info(f"Loaded sanrentan odds for {len(valid_df)} combinations across {len(valid_df['race_id'].unique())} races")
+
         except Exception as e:
             logger.error(f"Error loading sanrentan odds: {e}")
-            
+            logger.exception(e)
+            return np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
+        
+        total_elapsed_time = time.time() - start_time
+        logger.info(f"Total sanrentan loading time: {total_elapsed_time:.2f} seconds")
         return odds_array

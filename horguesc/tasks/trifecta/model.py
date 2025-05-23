@@ -109,14 +109,14 @@ class TrifectaModel(BaseModel):
         horse_performances = horse_performances + enhanced_context
         
         # Get actual horse counts for each race in the batch
-        horse_counts = inputs.get('horse_count')
-        if horse_counts is None:
-            logger.warning("No 'horse_count' found in inputs, assuming all horses are valid")
-            horse_counts = torch.full((batch_size,), max_horses, device=horse_performances.device)
+        horse_mask = inputs.get('horse_mask')
+        if horse_mask is None:
+            logger.warning("No 'horse_mask' found in inputs, assuming all horses are valid")
+            horse_mask = torch.ones((batch_size, max_horses), device=horse_performances.device, dtype=torch.int8)
         
         # Generate all possible trifecta combinations (top 3 horses in order)
         # For efficiency, we'll calculate scores for all possible 3-horse combinations
-        trifecta_scores = self._compute_trifecta_scores(horse_performances, max_horses, horse_counts)
+        trifecta_scores = self._compute_trifecta_scores(horse_performances, max_horses, horse_mask)
         
         # Apply softmax to get probabilities
         trifecta_probs = F.softmax(trifecta_scores, dim=1)
@@ -611,18 +611,18 @@ class TrifectaModel(BaseModel):
         
         return all_match
     
-    def _compute_trifecta_scores(self, horse_performances, max_horses, horse_counts):
+    def _compute_trifecta_scores(self, horse_performances, max_horses, horse_mask):
         """Compute scores for all possible trifecta combinations.
         
         This method efficiently calculates scores for all possible ordered combinations
         of 3 horses from max_horses, using vectorized operations instead of loops.
-        It also masks out impossible combinations based on actual horse counts.
+        It also masks out impossible combinations based on horse_mask.
         
         Args:
             horse_performances: Tensor of horse performance vectors [batch_size, max_horses, perf_dim]
             max_horses: Maximum number of horses per race
-            horse_counts: Tensor of actual horse counts for each race [batch_size]
-            
+            horse_mask: Tensor of horse presence mask [batch_size, max_horses] where 1 indicates a valid horse
+        
         Returns:
             torch.Tensor: Scores for each trifecta combination [batch_size, num_combinations]
         """
@@ -665,26 +665,26 @@ class TrifectaModel(BaseModel):
         reshaped_perfs = combined_perfs.view(-1, combined_perfs.shape[2])
         scores = self.combination_scorer(reshaped_perfs).view(batch_size, num_combinations)
         
-        # Create a mask for invalid combinations
-        # A combination is valid only if all horses in it are within the race's actual horse count
+        # Create a mask for invalid combinations using horse_mask
+        # A combination is valid only if all three horses in it are present in the race
         
-        # Expand horse_counts for broadcasting: [batch_size, 1]
-        horse_counts_expanded = horse_counts.unsqueeze(1)
-        
-        # For each combination, check if all three positions use valid horses
-        # The 1-indexed horse numbers are stored in all_combinations
         # Create tensors for all horse positions in combinations
-        combo_first = torch.tensor([c[0] for c in all_combinations], device=device)
-        combo_second = torch.tensor([c[1] for c in all_combinations], device=device)
-        combo_third = torch.tensor([c[2] for c in all_combinations], device=device)
+        combo_first = torch.tensor([c[0] - 1 for c in all_combinations], device=device)  # -1 for 0-indexing
+        combo_second = torch.tensor([c[1] - 1 for c in all_combinations], device=device)
+        combo_third = torch.tensor([c[2] - 1 for c in all_combinations], device=device)
         
-        # Create masks for each position (True if the horse number is valid)
-        first_valid = combo_first.unsqueeze(0) <= horse_counts_expanded  # [batch_size, num_combinations]
-        second_valid = combo_second.unsqueeze(0) <= horse_counts_expanded  # [batch_size, num_combinations]
-        third_valid = combo_third.unsqueeze(0) <= horse_counts_expanded  # [batch_size, num_combinations]
+        # Create masks for each position (True if the horse is present according to horse_mask)
+        # Expand horse_mask for broadcasting: [batch_size, 1, max_horses]
+        expanded_mask = horse_mask.unsqueeze(1)  # [batch_size, 1, max_horses]
+        
+        # Check if each horse in the combination is present
+        # [batch_size, num_combinations]
+        first_valid = expanded_mask[:, :, combo_first].squeeze(1)  # Get mask values for first horses
+        second_valid = expanded_mask[:, :, combo_second].squeeze(1)  # Get mask values for second horses
+        third_valid = expanded_mask[:, :, combo_third].squeeze(1)  # Get mask values for third horses
         
         # Combine masks (all three positions must be valid)
-        valid_combinations = first_valid & second_valid & third_valid  # [batch_size, num_combinations]
+        valid_combinations = (first_valid & second_valid & third_valid).bool()  # [batch_size, num_combinations]
         
         # Apply mask by setting invalid combination scores to a large negative value
         # This ensures they have near-zero probability after softmax

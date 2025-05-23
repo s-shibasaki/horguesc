@@ -38,7 +38,7 @@ class BettingSimulator:
         
         # 馬券購入明細に含めるレース数の上限（デフォルト10件）
         self.max_bet_details_races = config.getint(
-            'betting.simulator', 'max_bet_details_races', fallback=10)
+            'betting.simulator', 'max_bet_details_races', fallback=12)
         
         logger.debug("BettingSimulator初期化完了")
 
@@ -136,9 +136,9 @@ class BettingSimulator:
         
         # 馬券明細対象のレース選択（設定値に基づく件数制限）
         if betting_details_path and self.max_bet_details_races > 0 and race_count > self.max_bet_details_races:
-            # 明細を出力するレースのインデックスをランダムに選択
-            detail_race_indices = set(random.sample(range(race_count), min(self.max_bet_details_races, race_count)))
-            logger.info(f"馬券購入明細は全{race_count}レース中{len(detail_race_indices)}レースのみ出力します")
+            # 明細を出力するレースのインデックスを最初の数件から選択
+            detail_race_indices = set(range(min(self.max_bet_details_races, race_count)))
+            logger.info(f"馬券購入明細は全{race_count}レース中最初の{len(detail_race_indices)}レースのみ出力します")
         else:
             # すべてのレースの明細を出力
             detail_race_indices = set(range(race_count))

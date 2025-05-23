@@ -403,13 +403,13 @@ class TrifectaDataset(BaseDataset):
     
     def _convert_query_results_to_2d_arrays(self, query_results):
         """
-        クエリ結果を2D配列形式のデータに変換する
+        クエリ結果を2D配列形式のデータに変換する。馬番をインデックスとして使用する。
         
         Args:
             query_results: SQLクエリの結果（辞書のリスト）
             
         Returns:
-            dict: kyoso_idリストと特徴量の2D配列を含む辞
+            dict: kyoso_idリストと特徴量の2D配列を含む辞書
         """
         # 競走IDごとにデータをグループ化
         kyoso_groups = defaultdict(list)
@@ -431,14 +431,21 @@ class TrifectaDataset(BaseDataset):
             kyoso_id = f"{date_str}{keibajo_code}{kaisai_kai}{kaisai_nichime}{kyoso_bango}"
             kyoso_groups[kyoso_id].append(row)
         
-        # 最大出走頭数を計算
-        max_horses = max(len(horses) for horses in kyoso_groups.values())
-        logger.info(f"最大出走頭数: {max_horses}")
+        # 馬番の最大値を取得 (馬番は1から始まる)
+        max_horse_number = 0
+        for horses in kyoso_groups.values():
+            for horse in horses:
+                umaban = horse.get('umaban')
+                if umaban is not None and not pd.isna(umaban):
+                    max_horse_number = max(max_horse_number, int(umaban))
+        
+        # 安全マージンを取って、最大馬番を18(JRAの通常の最大値)にする
+        max_horse_number = max(max_horse_number, 18)
+        logger.info(f"最大馬番: {max_horse_number}")
         
         # 特徴量データの2D配列を準備
         kyoso_ids = []
         feature_arrays = defaultdict(list)
-        horse_counts = []  # 各レースの実際の出走馬数を保存
         
         # 特徴量名一覧をクエリ結果から取得
         features = list(query_results[0].keys()) if query_results else []
@@ -449,26 +456,34 @@ class TrifectaDataset(BaseDataset):
             if len(horses) < 3:
                 logger.debug(f"出走頭数が3頭未満のレースをスキップ: {kyoso_id}")
                 continue
-                
-            kyoso_ids.append(kyoso_id)
-            horse_counts.append(len(horses))  # 実際の出走馬数を記録
             
-            # 各特徴量について処理
-            for feature in features:
-                # 馬ごとの特徴量値を取得
-                values = [horse.get(feature) for horse in horses]
-                
-                # 最大頭数まで None で埋める
-                while len(values) < max_horses:
-                    values.append(None)
-                
+            kyoso_ids.append(kyoso_id)
+            
+            # 馬番のマスク配列を初期化 (0: 欠番または存在しない, 1: 存在する)
+            horse_mask = np.zeros(max_horse_number, dtype=np.int8)
+            
+            # 各特徴量の値を格納する配列を初期化
+            feature_values = {feature: np.full(max_horse_number, None) for feature in features}
+            
+            # 各馬の特徴量を適切な馬番位置に格納
+            for horse in horses:
+                umaban = horse.get('umaban')
+                if umaban is not None and not pd.isna(umaban):
+                    horse_idx = int(umaban) - 1  # 馬番は1から始まるため、0ベースのインデックスに変換
+                    if 0 <= horse_idx < max_horse_number:
+                        horse_mask[horse_idx] = 1
+                        for feature in features:
+                            feature_values[feature][horse_idx] = horse.get(feature)
+            
+            # マスクを保存
+            feature_arrays['horse_mask'].append(horse_mask)
+            
+            # 各特徴量の値を保存
+            for feature, values in feature_values.items():
                 feature_arrays[feature].append(values)
         
         # データを返す（kyoso_idはリストのまま、特徴量のみNumPy配列に変換）
-        formatted_data = {
-            'kyoso_id': kyoso_ids,
-            'horse_count': np.array(horse_counts, dtype=np.int32)  # 追加: 各レースの実際の出走馬数
-        }
+        formatted_data = {'kyoso_id': kyoso_ids}
         
         for feature, values_list in feature_arrays.items():
             formatted_data[feature] = np.array(values_list)
@@ -480,7 +495,7 @@ class TrifectaDataset(BaseDataset):
         3連単のターゲットを作成する
         
         - 各レースについて、確定着順に基づいて3連単の正解インデックスを特定
-        - インデックスベースで処理し、馬番ではなく配列の位置を使用
+        - 馬番をインデックスとして使用 (インデックス = 馬番 - 1)
         - 同着の場合も正しく処理（着順の数字ではなく順位で判断）
         """
         logger.info("3連単ターゲット情報の作成を開始")
@@ -489,12 +504,12 @@ class TrifectaDataset(BaseDataset):
             logger.warning("確定着順データがないため、3連単ターゲットを作成できません")
             return
             
-        # レース数と最大出走頭数を取得
+        # レース数と最大馬番を取得
         n_races = len(self.raw_data['kyoso_id'])
         max_horses = self.raw_data['kakutei_chakujun'].shape[1]
         
-        # 各レースの実際の出走頭数
-        horse_counts = self.raw_data['horse_count']
+        # マスクデータを取得 (存在する馬のみを考慮)
+        horse_mask = self.raw_data['horse_mask']
         
         # 全ての可能な3連単の組み合わせを生成
         all_combinations = list(itertools.permutations(range(max_horses), 3))
@@ -504,26 +519,27 @@ class TrifectaDataset(BaseDataset):
         
         # 各レースについて処理
         for race_idx in range(n_races):
-            # このレースの着順データを取得
+            # このレースの着順データとマスクを取得
             chakujun = self.raw_data['kakutei_chakujun'][race_idx]
+            mask = horse_mask[race_idx]
             
-            # 実際の出走馬数（馬の数）
-            race_horse_count = int(horse_counts[race_idx])
+            # 欠番や無効な馬を除外するためのマスク処理
+            valid_horses = np.where(mask > 0)[0]
             
-            # NoneやNaNを大きな値に置き換えて、有効な馬だけを考慮
-            chakujun_array = np.array([
-                999 if (i >= race_horse_count or pd.isna(v) or v is None)
-                else int(v) for i, v in enumerate(chakujun)
+            # 有効な馬の着順データを抽出
+            valid_chakujun = np.array([
+                999 if (pd.isna(chakujun[i]) or chakujun[i] is None or chakujun[i] == 0) 
+                else int(chakujun[i]) for i in valid_horses
             ])
             
-            # インデックスと着順のマッピングを作成
-            idx_with_chakujun = [(i, place) for i, place in enumerate(chakujun_array)]
+            # 有効な馬の馬番（インデックス）と着順のペアを作成
+            idx_with_chakujun = [(i, place) for i, place in zip(valid_horses, valid_chakujun)]
             
             # 着順で並べ替え
             idx_with_chakujun.sort(key=lambda x: x[1])
             
-            # 上位3頭の馬インデックスを取得（同着を考慮、着順の値ではなく順位で判断）
-            top3_indices = [pair[0] for pair in idx_with_chakujun[:3]]
+            # 上位3頭の馬インデックスを取得
+            top3_indices = [pair[0] for pair in idx_with_chakujun[:3] if pair[1] < 999]
             
             # 上位3頭が揃っていることを確認
             if len(top3_indices) == 3:
@@ -535,7 +551,7 @@ class TrifectaDataset(BaseDataset):
                     combo_idx = all_combinations.index(target_combo)
                     target_trifecta[race_idx] = combo_idx
                 except ValueError:
-                    # 組み合わせがall_combinationsに含まれない場合（通常発生しない）
+                    # 組み合わせがall_combinationsに含まれない場合
                     logger.warning(f"レース {self.raw_data['kyoso_id'][race_idx]} の組み合わせが見つかりません: {target_combo}")
             else:
                 # 上位3頭が特定できない場合（データ異常）
@@ -645,12 +661,12 @@ class TrifectaDataset(BaseDataset):
             logger.warning("確定着順データがないため、追加馬券種のターゲットを作成できません")
             return
         
-        # レース数と最大出走頭数を取得
+        # レース数と最大馬番を取得
         n_races = len(self.raw_data['kyoso_id'])
         max_horses = self.raw_data['kakutei_chakujun'].shape[1]
         
-        # 各レースの実際の出走馬数
-        horse_counts = self.raw_data['horse_count']
+        # マスクデータを取得
+        horse_mask = self.raw_data['horse_mask']
         
         # 各馬券種のターゲットを格納する配列を初期化
         target_tansho = np.full(n_races, -1, dtype=np.int64)                        # 単勝
@@ -678,23 +694,24 @@ class TrifectaDataset(BaseDataset):
         
         # 各レースについて処理
         for race_idx in range(n_races):
-            # このレースの着順データを取得
+            # このレースの着順データとマスクを取得
             chakujun = self.raw_data['kakutei_chakujun'][race_idx]
+            mask = horse_mask[race_idx]
             
             # 枠番データを取得（枠連用）
             wakuban = self.raw_data['wakuban'][race_idx] if 'wakuban' in self.raw_data else None
             
-            # 実際の出走馬数
-            race_horse_count = int(horse_counts[race_idx])
+            # 欠番や無効な馬を除外するためのマスク処理
+            valid_horses = np.where(mask > 0)[0]
             
-            # NoneやNaNを大きな値に置き換えて、有効な馬だけを考慮
-            chakujun_array = np.array([
-                999 if (i >= race_horse_count or pd.isna(v) or v is None)
-                else int(v) for i, v in enumerate(chakujun)
+            # 有効な馬の着順データを抽出
+            valid_chakujun = np.array([
+                999 if (pd.isna(chakujun[i]) or chakujun[i] is None or chakujun[i] == 0) 
+                else int(chakujun[i]) for i in valid_horses
             ])
             
-            # インデックスと着順のマッピングを作成
-            idx_with_chakujun = [(i, place) for i, place in enumerate(chakujun_array)]
+            # 有効な馬の馬番（インデックス）と着順のペアを作成
+            idx_with_chakujun = [(i, place) for i, place in zip(valid_horses, valid_chakujun)]
             
             # 着順で並べ替え
             idx_with_chakujun.sort(key=lambda x: x[1])
@@ -765,19 +782,19 @@ class TrifectaDataset(BaseDataset):
             
             # ワイド（3着以内の2頭の馬の組み合わせ、順不同）
             if len(top3_indices) >= 2:
-                for i in range(len(top3_indices)):
-                    for j in range(i+1, len(top3_indices)):
-                        horse1, horse2 = top3_indices[i], top3_indices[j]
-                        
-                        # 馬番の順序を正規化（小さい方を先に）
-                        if horse1 > horse2:
-                            horse1, horse2 = horse2, horse1
-                        
-                        try:
-                            combo_idx = umaren_combinations.index((horse1, horse2))
-                            target_wide[race_idx, combo_idx] = 1
-                        except ValueError:
-                            pass
+                # より効率的な実装: 組み合わせをベクトル化
+                pairs = list(itertools.combinations(top3_indices, 2))
+                for pair in pairs:
+                    horse1, horse2 = pair
+                    # 馬番の順序を正規化（小さい方を先に）
+                    if horse1 > horse2:
+                        horse1, horse2 = horse2, horse1
+                    
+                    try:
+                        combo_idx = umaren_combinations.index((horse1, horse2))
+                        target_wide[race_idx, combo_idx] = 1
+                    except ValueError:
+                        pass
         
         # 有効なターゲットがあるもののみを追加
         if np.any(target_tansho >= 0):

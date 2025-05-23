@@ -601,21 +601,15 @@ class TrifectaDataset(BaseDataset):
         # Get race IDs and necessary arrays for odds loading
         race_ids = self.raw_data['kyoso_id']
         
-        # Extract umaban and wakuban arrays
-        umaban_array = self.raw_data.get('umaban')
-        wakuban_array = self.raw_data.get('wakuban')
-        
         # Load all odds types that we want to include
         odds_types = None  # Load all odds types
-        
+
         logger.info(f"Loading odds data for {len(race_ids)} races")
         
         try:
             # Load odds data using OddsLoader
             odds_data = odds_loader.load_odds(
                 race_ids=race_ids,
-                horse_numbers=umaban_array,
-                frame_numbers=wakuban_array,
                 odds_types=odds_types
             )
             

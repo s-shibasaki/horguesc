@@ -392,6 +392,9 @@ class TrifectaDataset(BaseDataset):
             
             # Add betting odds data
             self._add_betting_odds(db_ops)
+
+            # Add market implied probabilities
+            self._add_market_implied_probs()
     
         except Exception as e:
             logger.error(f"データ取得中にエラーが発生しました: {e}")
@@ -405,7 +408,7 @@ class TrifectaDataset(BaseDataset):
             query_results: SQLクエリの結果（辞書のリスト）
             
         Returns:
-            dict: kyoso_idリストと特徴量の2D配列を含む辞書
+            dict: kyoso_idリストと特徴量の2D配列を含む辞
         """
         # 競走IDごとにデータをグループ化
         kyoso_groups = defaultdict(list)
@@ -616,14 +619,7 @@ class TrifectaDataset(BaseDataset):
             # Add odds data to raw_data with prefix 'odds_'
             for odds_type, odds_array in odds_data.items():
                 self.raw_data[f'odds_{odds_type}'] = odds_array
-                
-                # Calculate inverse odds (implied probabilities)
-                inverse_odds = 1.0 / odds_array
-                
-                # Add inverse odds to raw_data with prefix 'inverse_odds_'
-                self.raw_data[f'inverse_odds_{odds_type}'] = inverse_odds
-                
-                logger.info(f"Added {odds_type} odds data with shape {odds_array.shape} and corresponding inverse odds")
+                logger.info(f"Added {odds_type} odds data with shape {odds_array.shape}")
                 
         except Exception as e:
             logger.error(f"Error loading odds data: {e}", exc_info=True)
@@ -809,3 +805,283 @@ class TrifectaDataset(BaseDataset):
         if np.any(target_sanrenpuku >= 0):
             self.raw_data['target_sanrenpuku'] = target_sanrenpuku
             logger.info(f"3連複ターゲット作成完了: {np.sum(target_sanrenpuku >= 0)}/{n_races} レースで有効")
+
+    def _add_market_implied_probs(self):
+        """
+        Add market-implied probability features for each horse based on betting odds.
+        
+        For each horse, calculates:
+        - Win probability (from tansho odds)
+        - Place probability (from fukusho odds)
+        - Various implied probabilities from combination bets (wakuren, umaren, wide, umatan, sanrenpuku, sanrentan)
+        
+        Avoids loops for better performance by using vectorized operations.
+        Sets probability values to np.nan where horse_mask is 0 (horse doesn't exist).
+        """
+        logger.info("Adding market-implied probability features for each horse")
+        
+        if 'kyoso_id' not in self.raw_data or not self.raw_data['kyoso_id']:
+            logger.warning("No race data available to add market-implied probabilities")
+            return
+        
+        # Get dimensions
+        n_races = len(self.raw_data['kyoso_id'])
+        max_horses = self.raw_data['horse_mask'].shape[1]
+        
+        # Initialize arrays for all the new features
+        prob_win = np.zeros((n_races, max_horses), dtype=np.float32)
+        prob_place = np.zeros((n_races, max_horses), dtype=np.float32)
+        prob_frame_quinella = np.zeros((n_races, max_horses), dtype=np.float32)
+        prob_quinella = np.zeros((n_races, max_horses), dtype=np.float32)
+        prob_quinella_place = np.zeros((n_races, max_horses), dtype=np.float32)
+        prob_exacta_first = np.zeros((n_races, max_horses), dtype=np.float32)
+        prob_exacta = np.zeros((n_races, max_horses), dtype=np.float32)
+        prob_trio = np.zeros((n_races, max_horses), dtype=np.float32)
+        prob_trifecta_first = np.zeros((n_races, max_horses), dtype=np.float32)
+        prob_trifecta_first_second = np.zeros((n_races, max_horses), dtype=np.float32)
+        prob_trifecta = np.zeros((n_races, max_horses), dtype=np.float32)
+        
+        # Get horse mask to filter valid horses
+        horse_mask = self.raw_data['horse_mask']
+        
+        # 1. Win probability (単勝)
+        if 'odds_tansho' in self.raw_data:
+            odds_tansho = self.raw_data['odds_tansho']
+            # Create mask for valid odds (>0)
+            valid_odds_mask = (odds_tansho > 0) & np.isfinite(odds_tansho)
+            # Calculate inverse odds (implied probability)
+            prob_win[valid_odds_mask] = 1.0 / odds_tansho[valid_odds_mask]
+        
+        # 2. Place probability (複勝)
+        if 'odds_fukusho' in self.raw_data:
+            odds_fukusho = self.raw_data['odds_fukusho']
+            valid_odds_mask = (odds_fukusho > 0) & np.isfinite(odds_fukusho)
+            prob_place[valid_odds_mask] = 1.0 / odds_fukusho[valid_odds_mask]
+        
+        # 3. Frame Quinella probability (枠連)
+        if 'odds_wakuren' in self.raw_data and 'wakuban' in self.raw_data:
+            odds_wakuren = self.raw_data['odds_wakuren']
+            wakuban = self.raw_data['wakuban']
+            
+            # Get max frame number from config or default to 8
+            max_frames = self.config.getint('features', 'max_frame_number', fallback=8)
+            
+            # Create frame combinations (same structure as in _create_additional_bet_targets)
+            frame_combinations = []
+            for i in range(1, max_frames + 1):
+                for j in range(i, max_frames + 1):
+                    frame_combinations.append((i, j))
+            
+            # Convert odds to probabilities
+            valid_odds_mask = (odds_wakuren > 0) & np.isfinite(odds_wakuren)
+            wakuren_probs = np.zeros_like(odds_wakuren)
+            wakuren_probs[valid_odds_mask] = 1.0 / odds_wakuren[valid_odds_mask]
+            
+            # For each race
+            for race_idx in range(n_races):
+                # Get frames for horses in this race
+                horse_frames = wakuban[race_idx]
+                
+                # For each frame combination with probability
+                for combo_idx in range(len(frame_combinations)):
+                    if combo_idx < wakuren_probs.shape[1]:  # Ensure index is within bounds
+                        prob = wakuren_probs[race_idx, combo_idx]
+                        if prob > 0:
+                            frame1, frame2 = frame_combinations[combo_idx]
+                            
+                            # Add this probability to all horses with these frames
+                            for horse_idx in range(max_horses):
+                                if horse_mask[race_idx, horse_idx] > 0:
+                                    horse_frame = horse_frames[horse_idx]
+                                    if not pd.isna(horse_frame) and horse_frame is not None:
+                                        if horse_frame == frame1 or horse_frame == frame2:
+                                            prob_frame_quinella[race_idx, horse_idx] += prob
+        
+        # 4. Quinella probability (馬連)
+        if 'odds_umaren' in self.raw_data:
+            odds_umaren = self.raw_data['odds_umaren']
+            
+            # Generate horse combinations for quinella (order doesn't matter)
+            horse_combinations = list(itertools.combinations(range(max_horses), 2))
+            
+            # Convert odds to probabilities
+            valid_odds_mask = (odds_umaren > 0) & np.isfinite(odds_umaren)
+            umaren_probs = np.zeros_like(odds_umaren)
+            umaren_probs[valid_odds_mask] = 1.0 / odds_umaren[valid_odds_mask]
+            
+            # Create mapping from horse index to combinations it appears in
+            horse_to_combos = defaultdict(list)
+            for combo_idx, (horse1, horse2) in enumerate(horse_combinations):
+                horse_to_combos[horse1].append(combo_idx)
+                horse_to_combos[horse2].append(combo_idx)
+            
+            # For each race
+            for race_idx in range(n_races):
+                # For each horse
+                for horse_idx in range(max_horses):
+                    if horse_mask[race_idx, horse_idx] > 0:
+                        # Sum probabilities of all combinations containing this horse
+                        for combo_idx in horse_to_combos[horse_idx]:
+                            if combo_idx < umaren_probs.shape[1]:  # Ensure index is within bounds
+                                prob_quinella[race_idx, horse_idx] += umaren_probs[race_idx, combo_idx]
+        
+        # 5. Quinella Place probability (ワイド)
+        if 'odds_wide' in self.raw_data:
+            odds_wide = self.raw_data['odds_wide']
+            
+            # Generate horse combinations for wide (order doesn't matter)
+            horse_combinations = list(itertools.combinations(range(max_horses), 2))
+            
+            # Convert odds to probabilities
+            valid_odds_mask = (odds_wide > 0) & np.isfinite(odds_wide)
+            wide_probs = np.zeros_like(odds_wide)
+            wide_probs[valid_odds_mask] = 1.0 / odds_wide[valid_odds_mask]
+            
+            # Create mapping from horse index to combinations it appears in
+            horse_to_combos = defaultdict(list)
+            for combo_idx, (horse1, horse2) in enumerate(horse_combinations):
+                horse_to_combos[horse1].append(combo_idx)
+                horse_to_combos[horse2].append(combo_idx)
+            
+            # For each race
+            for race_idx in range(n_races):
+                # For each horse
+                for horse_idx in range(max_horses):
+                    if horse_mask[race_idx, horse_idx] > 0:
+                        # Sum probabilities of all combinations containing this horse
+                        for combo_idx in horse_to_combos[horse_idx]:
+                            if combo_idx < wide_probs.shape[1]:  # Ensure index is within bounds
+                                prob_quinella_place[race_idx, horse_idx] += wide_probs[race_idx, combo_idx]
+        
+        # 6. Exacta probability (馬単)
+        if 'odds_umatan' in self.raw_data:
+            odds_umatan = self.raw_data['odds_umatan']
+            
+            # Generate horse combinations for exacta (order matters)
+            horse_permutations = list(itertools.permutations(range(max_horses), 2))
+            
+            # Convert odds to probabilities
+            valid_odds_mask = (odds_umatan > 0) & np.isfinite(odds_umatan)
+            umatan_probs = np.zeros_like(odds_umatan)
+            umatan_probs[valid_odds_mask] = 1.0 / odds_umatan[valid_odds_mask]
+            
+            # Create mappings
+            horse_first_to_combos = defaultdict(list)   # Horse is first in exacta
+            horse_to_combos = defaultdict(list)         # Horse appears anywhere in exacta
+            
+            for combo_idx, (horse1, horse2) in enumerate(horse_permutations):
+                horse_first_to_combos[horse1].append(combo_idx)
+                horse_to_combos[horse1].append(combo_idx)
+                horse_to_combos[horse2].append(combo_idx)
+            
+            # For each race
+            for race_idx in range(n_races):
+                # For each horse
+                for horse_idx in range(max_horses):
+                    if horse_mask[race_idx, horse_idx] > 0:
+                        # Sum probabilities where horse is first
+                        for combo_idx in horse_first_to_combos[horse_idx]:
+                            if combo_idx < umatan_probs.shape[1]:
+                                prob_exacta_first[race_idx, horse_idx] += umatan_probs[race_idx, combo_idx]
+                        
+                        # Sum all probabilities containing this horse
+                        for combo_idx in horse_to_combos[horse_idx]:
+                            if combo_idx < umatan_probs.shape[1]:
+                                prob_exacta[race_idx, horse_idx] += umatan_probs[race_idx, combo_idx]
+        
+        # 7. Trio probability (3連複)
+        if 'odds_sanrenpuku' in self.raw_data:
+            odds_sanrenpuku = self.raw_data['odds_sanrenpuku']
+            
+            # Generate horse combinations for trio (order doesn't matter)
+            horse_combinations = list(itertools.combinations(range(max_horses), 3))
+            
+            # Convert odds to probabilities
+            valid_odds_mask = (odds_sanrenpuku > 0) & np.isfinite(odds_sanrenpuku)
+            sanrenpuku_probs = np.zeros_like(odds_sanrenpuku)
+            sanrenpuku_probs[valid_odds_mask] = 1.0 / odds_sanrenpuku[valid_odds_mask]
+            
+            # Create mapping from horse index to combinations it appears in
+            horse_to_combos = defaultdict(list)
+            for combo_idx, (horse1, horse2, horse3) in enumerate(horse_combinations):
+                horse_to_combos[horse1].append(combo_idx)
+                horse_to_combos[horse2].append(combo_idx)
+                horse_to_combos[horse3].append(combo_idx)
+            
+            # For each race
+            for race_idx in range(n_races):
+                # For each horse
+                for horse_idx in range(max_horses):
+                    if horse_mask[race_idx, horse_idx] > 0:
+                        # Sum probabilities of all combinations containing this horse
+                        for combo_idx in horse_to_combos[horse_idx]:
+                            if combo_idx < sanrenpuku_probs.shape[1]:
+                                prob_trio[race_idx, horse_idx] += sanrenpuku_probs[race_idx, combo_idx]
+        
+        # 8. Trifecta probability (3連単)
+        if 'odds_sanrentan' in self.raw_data:
+            odds_sanrentan = self.raw_data['odds_sanrentan']
+            
+            # Generate horse permutations for trifecta (order matters)
+            horse_permutations = list(itertools.permutations(range(max_horses), 3))
+            
+            # Convert odds to probabilities
+            valid_odds_mask = (odds_sanrentan > 0) & np.isfinite(odds_sanrentan)
+            sanrentan_probs = np.zeros_like(odds_sanrentan)
+            sanrentan_probs[valid_odds_mask] = 1.0 / odds_sanrentan[valid_odds_mask]
+            
+            # Create mappings for different scenarios
+            horse_first_to_combos = defaultdict(list)           # Horse is first in trifecta
+            horse_first_or_second_to_combos = defaultdict(list) # Horse is first or second
+            horse_to_combos = defaultdict(list)                 # Horse appears anywhere
+            
+            for combo_idx, (horse1, horse2, horse3) in enumerate(horse_permutations):
+                horse_first_to_combos[horse1].append(combo_idx)
+                
+                horse_first_or_second_to_combos[horse1].append(combo_idx)
+                horse_first_or_second_to_combos[horse2].append(combo_idx)
+                
+                horse_to_combos[horse1].append(combo_idx)
+                horse_to_combos[horse2].append(combo_idx)
+                horse_to_combos[horse3].append(combo_idx)
+            
+            # For each race
+            for race_idx in range(n_races):
+                # For each horse
+                for horse_idx in range(max_horses):
+                    if horse_mask[race_idx, horse_idx] > 0:
+                        # Sum probabilities where horse is first
+                        for combo_idx in horse_first_to_combos[horse_idx]:
+                            if combo_idx < sanrentan_probs.shape[1]:
+                                prob_trifecta_first[race_idx, horse_idx] += sanrentan_probs[race_idx, combo_idx]
+                        
+                        # Sum probabilities where horse is first or second
+                        for combo_idx in horse_first_or_second_to_combos[horse_idx]:
+                            if combo_idx < sanrentan_probs.shape[1]:
+                                prob_trifecta_first_second[race_idx, horse_idx] += sanrentan_probs[race_idx, combo_idx]
+                        
+                        # Sum all probabilities containing this horse
+                        for combo_idx in horse_to_combos[horse_idx]:
+                            if combo_idx < sanrentan_probs.shape[1]:
+                                prob_trifecta[race_idx, horse_idx] += sanrentan_probs[race_idx, combo_idx]
+        
+        # Add all the computed probabilities to raw_data
+        self.raw_data['prob_win'] = prob_win
+        self.raw_data['prob_place'] = prob_place
+        self.raw_data['prob_frame_quinella'] = prob_frame_quinella
+        self.raw_data['prob_quinella'] = prob_quinella
+        self.raw_data['prob_quinella_place'] = prob_quinella_place
+        self.raw_data['prob_exacta_first'] = prob_exacta_first
+        self.raw_data['prob_exacta'] = prob_exacta
+        self.raw_data['prob_trio'] = prob_trio
+        self.raw_data['prob_trifecta_first'] = prob_trifecta_first
+        self.raw_data['prob_trifecta_first_second'] = prob_trifecta_first_second
+        self.raw_data['prob_trifecta'] = prob_trifecta
+        
+        # Set values to np.nan where horse_mask is 0
+        for key in ['prob_win', 'prob_place', 'prob_frame_quinella', 'prob_quinella', 
+                    'prob_quinella_place', 'prob_exacta_first', 'prob_exacta', 'prob_trio',
+                    'prob_trifecta_first', 'prob_trifecta_first_second', 'prob_trifecta']:
+            self.raw_data[key][horse_mask == 0] = np.nan
+    
+        logger.info("Added 11 market-implied probability features for each horse")

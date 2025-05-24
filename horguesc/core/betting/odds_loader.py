@@ -148,8 +148,8 @@ class OddsLoader:
         race_id_to_index = {race_id: i for i, race_id in enumerate(race_ids)}
         
         # Initialize the result array with NaN
-        result = np.full((len(race_ids), self.max_horse_number), np.nan)
-        
+        result = np.full((len(race_ids), self.max_horse_number), np.nan, dtype=np.float32)
+
         # Build the query to get the latest odds for each race
         query = f"""
             WITH latest_odds AS (
@@ -209,8 +209,8 @@ class OddsLoader:
         race_id_to_index = {race_id: i for i, race_id in enumerate(race_ids)}
         
         # Initialize the result array with NaN
-        result = np.full((len(race_ids), self.max_horse_number), np.nan)
-        
+        result = np.full((len(race_ids), self.max_horse_number), np.nan, dtype=np.float32)
+
         # Build the query to get the latest odds for each race
         query = f"""
             WITH latest_odds AS (
@@ -273,7 +273,7 @@ class OddsLoader:
         num_combinations = self.max_frame_number * (self.max_frame_number + 1) // 2
         
         # Initialize the result array with NaN
-        result = np.full((len(race_ids), num_combinations), np.nan)
+        result = np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
         
         # Build the query to get the latest odds for each race
         query = f"""
@@ -353,7 +353,7 @@ class OddsLoader:
         num_combinations = self.max_horse_number * (self.max_horse_number - 1) // 2
         
         # Initialize the result array with NaN
-        result = np.full((len(race_ids), num_combinations), np.nan)
+        result = np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
         
         # Build the query to get the latest odds for each race
         query = f"""
@@ -433,7 +433,7 @@ class OddsLoader:
         num_combinations = self.max_horse_number * (self.max_horse_number - 1) // 2
         
         # Initialize the result array with NaN
-        result = np.full((len(race_ids), num_combinations), np.nan)
+        result = np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
         
         # Build the query to get the latest odds for each race
         query = f"""
@@ -513,7 +513,7 @@ class OddsLoader:
         num_combinations = self.max_horse_number * (self.max_horse_number - 1)
         
         # Initialize the result array with NaN
-        result = np.full((len(race_ids), num_combinations), np.nan)
+        result = np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
         
         # Build the query to get the latest odds for each race
         query = f"""
@@ -593,7 +593,7 @@ class OddsLoader:
         num_combinations = self.max_horse_number * (self.max_horse_number - 1) * (self.max_horse_number - 2) // 6
         
         # Initialize the result array with NaN
-        result = np.full((len(race_ids), num_combinations), np.nan)
+        result = np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
         
         # Build the query to get the latest odds for each race
         query = f"""
@@ -681,7 +681,7 @@ class OddsLoader:
         num_combinations = self.max_horse_number * (self.max_horse_number - 1) * (self.max_horse_number - 2)
         
         # Initialize the result array with NaN
-        result = np.full((len(race_ids), num_combinations), np.nan)
+        result = np.full((len(race_ids), num_combinations), np.nan, dtype=np.float32)
         
         # Build the query to get the latest odds for each race
         query = f"""

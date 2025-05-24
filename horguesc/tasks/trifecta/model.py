@@ -845,7 +845,7 @@ class TrifectaModel(BaseModel):
             
             # Create timestamp and epoch-based filename
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            epoch_str = f"epoch{epoch}" if epoch is not None else "inference"
+            epoch_str = f"epoch{epoch+1}" if epoch is not None else "inference"
             
             capital_trend_path = os.path.join(vis_dir, f"trifecta_capital_trend_{epoch_str}_{timestamp}.png")
             betting_details_path = os.path.join(vis_dir, f"trifecta_betting_details_{epoch_str}_{timestamp}.xlsx")
